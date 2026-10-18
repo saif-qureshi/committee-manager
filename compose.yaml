@@ -1,0 +1,20 @@
+# Local development only. Production database ports must remain private.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: committee_manager
+      POSTGRES_USER: committee_manager
+      POSTGRES_PASSWORD: local_development_only
+    ports:
+      - '127.0.0.1:5436:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U committee_manager -d committee_manager']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

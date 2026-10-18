@@ -1,0 +1,21 @@
+{
+  "name": "committee-manager",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev:backend": "pnpm --filter @committee-manager/backend dev",
+    "dev:mobile": "pnpm --filter @committee-manager/mobile start",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose stop postgres",
+    "db:migrate": "pnpm --dir backend exec node ace migration:run",
+    "build:backend": "pnpm --filter @committee-manager/backend build",
+    "typecheck": "pnpm -r typecheck",
+    "lint:backend": "pnpm --filter @committee-manager/backend lint",
+    "test": "pnpm --filter @committee-manager/backend test"
+  }
+}
