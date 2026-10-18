@@ -32,19 +32,74 @@ export class AuthAccessTokenSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
-export class UserSchema extends BaseModel {
-  static $columns = ['createdAt', 'email', 'fullName', 'id', 'password', 'updatedAt'] as const
-  $columns = UserSchema.$columns
+export class InvitationSchema extends BaseModel {
+  static $columns = ['acceptedAt', 'acceptedBy', 'createdAt', 'createdBy', 'expiresAt', 'id', 'organizationId', 'recipientIdentifier', 'revokedAt', 'tokenHash'] as const
+  $columns = InvitationSchema.$columns
+  @column.dateTime()
+  declare acceptedAt: DateTime | null
+  @column()
+  declare acceptedBy: number | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
   @column()
-  declare email: string
+  declare createdBy: number
+  @column.dateTime()
+  declare expiresAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare recipientIdentifier: string
+  @column.dateTime()
+  declare revokedAt: DateTime | null
+  @column()
+  declare tokenHash: string
+}
+
+export class OrganizationMemberSchema extends BaseModel {
+  static $columns = ['createdAt', 'id', 'organizationId', 'role', 'userId'] as const
+  $columns = OrganizationMemberSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare role: string
+  @column()
+  declare userId: number
+}
+
+export class OrganizationSchema extends BaseModel {
+  static $columns = ['createdAt', 'id', 'name', 'ownerId'] as const
+  $columns = OrganizationSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare name: string
+  @column()
+  declare ownerId: number
+}
+
+export class UserSchema extends BaseModel {
+  static $columns = ['createdAt', 'fullName', 'id', 'password', 'phone', 'updatedAt', 'username'] as const
+  $columns = UserSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
   @column()
   declare fullName: string | null
   @column({ isPrimary: true })
   declare id: number
   @column({ serializeAs: null })
   declare password: string
+  @column()
+  declare phone: string | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+  @column()
+  declare username: string | null
 }

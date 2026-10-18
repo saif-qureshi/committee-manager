@@ -1,6 +1,6 @@
 # Committee Manager
 
-Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL configuration and the official starter's token-authentication endpoints. Committee and financial features are not implemented yet.
+Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee and financial features are not implemented yet.
 
 ## Requirements
 
@@ -15,6 +15,7 @@ Run from the repository root:
 ```sh
 pnpm install
 cp backend/.env.example backend/.env
+cp backend/.env.test.example backend/.env.test
 cp mobile/.env.example mobile/.env
 cd backend
 node ace generate:key
@@ -47,8 +48,8 @@ backend/
     controllers/       HTTP endpoints
     middleware/        Authentication and request handling
     models/            Lucid models
-    policies/          Future resource authorization policies
-    services/          Future transactional business actions
+    policies/          Bouncer resource permission checks
+    services/          Authentication and membership actions
     transformers/      Public response fields
     validators/        Request validation
   config/              AdonisJS configuration, including PostgreSQL
@@ -70,10 +71,11 @@ mobile/
 deploy/                Reserved production deployment configuration
 docs/
   README.md            Setup and project structure
+  API.md               Current REST endpoints
   PLAN.md              Product scope and delivery phases
   ERD.md               Proposed data model and backend actions
   DEPLOYMENT.md        Hosting scope and deployment notes
-compose.yaml           Local PostgreSQL only
+compose.yaml           Development and isolated test PostgreSQL
 pnpm-workspace.yaml    Backend and mobile workspace packages
 pnpm-lock.yaml         Shared dependency lockfile
 ```
@@ -108,6 +110,8 @@ pnpm build:backend
 
 Adonis generates controller and route types during application boot and build. The backend typecheck command also runs code generation so a fresh checkout can be checked after environment setup.
 
-The starter provides signup/login and protected profile/logout routes under `/api/v1`. They are development foundations: organization/member authorization, verification/recovery, rate limiting, and production token policy must be completed before exposing a production service.
+The REST API is documented in [API.md](./API.md). Controllers only use resource methods and delegate input validation to VineJS validators and business actions to services. Controllers load the organization through the authenticated user, authorize actions through Bouncer policies, and pass the organization to services. Transaction queries and locks stay in services, and transformers whitelist response fields. Identity verification, password recovery, and rate limiting remain required before production.
+
+`pnpm test` starts a separate temporary PostgreSQL instance on port 5437. The runner refuses to migrate any database other than `committee_manager_test`; tests never reset the development database.
 
 Urdu resources and a font directory are present; language switching, RTL integration, and a bundled Urdu font are not implemented yet. VPS deployment and off-server backups are planned, not provisioned.

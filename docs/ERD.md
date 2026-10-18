@@ -1,23 +1,22 @@
 # Committee Manager — ERD and Backend Actions
 
-Proposed database design for [PLAN.md](./PLAN.md). These Mermaid diagrams describe the design; they are not implemented migrations. See [README.md](./README.md) for the current scaffold.
+Database design for [PLAN.md](./PLAN.md). Users, organizations, organization memberships, and invitations are implemented; committee and financial tables remain planned. See [README.md](./README.md) for the current scaffold.
 
 Amounts are integer paisa in PostgreSQL `bigint`. Financial calculations must preserve integer precision in backend and mobile code. Domain IDs are UUIDs; the starter authentication users use integer IDs. Event timestamps are timezone-aware, and installment due dates are local calendar dates.
 
 ## 1. Accounts, committees, and shares
 
-An organization is one organizer's workspace. Additional organizers can be granted access to that workspace. A member is a contact record, which can be linked to a verified login later. Shares belong to committees; ownership history supports replacements without rewriting old records. `AUTH_USERS` represents the AdonisJS `users` table. Its access-token table is omitted here. Keep the official starter's integer user IDs; references to users below are integers, while future domain records use UUIDs.
+An organizer signs up independently. Signup creates their organization and their `organizer` row in `organization_members` atomically. Members use the same `users` table and join through an invitation. A user can organize their own group and participate in others; there is no administrator-created organizer or staff-access flow. `AUTH_USERS` represents the AdonisJS `users` table; its access-token table is omitted. User IDs are integers and domain IDs are UUIDs.
 
 ```mermaid
 erDiagram
-    AUTH_USERS ||--o{ ORGANIZATION_ACCESS : receives
-    ORGANIZATIONS ||--|{ ORGANIZATION_ACCESS : grants
-    ORGANIZATIONS ||--o{ MEMBERS : maintains
-    AUTH_USERS o|--o{ MEMBERS : verified_login_for
+    AUTH_USERS ||--o| ORGANIZATIONS : owns
+    AUTH_USERS ||--o{ ORGANIZATION_MEMBERS : participates
+    ORGANIZATIONS ||--|{ ORGANIZATION_MEMBERS : includes
     ORGANIZATIONS ||--o{ COMMITTEES : manages
     COMMITTEES ||--o{ SHARES : contains
     SHARES ||--o{ SHARE_OWNERSHIPS : has_history
-    MEMBERS ||--o{ SHARE_OWNERSHIPS : holds
+    ORGANIZATION_MEMBERS ||--o{ SHARE_OWNERSHIPS : holds
     COMMITTEES ||--o{ ROUNDS : schedules
     SHARES o|--o{ ROUNDS : assigned_recipient
     ROUNDS ||--o{ INSTALLMENTS : requires
@@ -26,24 +25,22 @@ erDiagram
 
     AUTH_USERS {
         int id PK
+        string username "nullable; unique"
+        string phone "nullable; unique; normalized"
+        string password "hashed; never serialized"
     }
     ORGANIZATIONS {
         uuid id PK
+        int owner_id FK,UK
         string name
         timestamptz created_at
     }
-    ORGANIZATION_ACCESS {
-        uuid organization_id PK,FK
-        int user_id PK,FK
-        string role "owner or organizer"
-    }
-    MEMBERS {
+    ORGANIZATION_MEMBERS {
         uuid id PK
         uuid organization_id FK
-        int auth_user_id FK "nullable; verified linking only"
-        string name
-        string phone "normalized; not an identity proof"
-        string preferred_language "ur or en"
+        int user_id FK
+        string role "organizer or member"
+        timestamptz created_at
     }
     COMMITTEES {
         uuid id PK
@@ -67,7 +64,7 @@ erDiagram
     SHARE_OWNERSHIPS {
         uuid id PK
         uuid share_id FK
-        uuid member_id FK
+        uuid organization_member_id FK
         timestamptz starts_at
         timestamptz ends_at "nullable while current"
         string transfer_reason
@@ -94,6 +91,8 @@ erDiagram
 
 ### Constraints
 
+- Each user owns at most one organization. Each `(organization_id, user_id)` membership is unique. The owner has the `organizer` membership; invitation acceptance only creates `member` memberships. No public role-edit endpoint exists.
+- A user must have a unique username or phone number; both may be provided. Passwords are hashed and login identifiers are separate from membership roles.
 - Unique `(committee_id, share_number)`, `(committee_id, round_number)`, and `(round_id, share_id)`.
 - A share can be assigned to at most one round in its committee. Multiple null assignments are allowed before draws.
 - Every related share, round, installment, and ownership must belong to the same committee; members and committees must belong to the same organization. Enforce with composite foreign keys or controlled database functions, not UI checks alone.
@@ -109,7 +108,7 @@ Use one financial ledger for actual cash movements. A positive entry increases c
 ```mermaid
 erDiagram
     COMMITTEES ||--o{ MONEY_ENTRIES : records
-    MEMBERS o|--o{ MONEY_ENTRIES : member_counterparty
+    ORGANIZATION_MEMBERS o|--o{ MONEY_ENTRIES : member_counterparty
     AUTH_USERS ||--o{ MONEY_ENTRIES : records
     MONEY_ENTRIES ||--o{ PAYMENT_ALLOCATIONS : allocates
     INSTALLMENTS ||--o{ PAYMENT_ALLOCATIONS : receives
@@ -119,7 +118,7 @@ erDiagram
     MONEY_ENTRIES o|--o{ MONEY_ENTRIES : reverses
     MONEY_ENTRIES o|--o{ MONEY_ENTRIES : repays_advance
     COMMITTEES ||--o{ PAYMENT_SUBMISSIONS : receives
-    MEMBERS ||--o{ PAYMENT_SUBMISSIONS : submits_for
+    ORGANIZATION_MEMBERS ||--o{ PAYMENT_SUBMISSIONS : submits_for
     PAYMENT_SUBMISSIONS o|--o| MONEY_ENTRIES : verified_as
     PAYMENT_SUBMISSIONS o|--o{ DOCUMENTS : has_proof
     MONEY_ENTRIES o|--o{ DOCUMENTS : has_receipt
@@ -129,7 +128,7 @@ erDiagram
         uuid committee_id FK
         string kind "contribution, refund, payout, advance, advance_repayment, reversal"
         bigint signed_amount_paisa
-        uuid member_id FK "nullable; counterparty"
+        uuid organization_member_id FK "nullable; counterparty"
         int advance_provider_user_id FK "nullable; organizer funding"
         uuid round_id FK "required for payout"
         uuid share_id FK "required for payout"
@@ -154,7 +153,7 @@ erDiagram
     PAYMENT_SUBMISSIONS {
         uuid id PK
         uuid committee_id FK
-        uuid member_id FK
+        uuid organization_member_id FK
         bigint proposed_amount_paisa
         date claimed_payment_date
         string reference
@@ -203,8 +202,8 @@ erDiagram
     SHARE_OWNERSHIPS ||--o{ DRAW_CANDIDATES : owner_at_draw
     SHARES ||--o{ DRAW_RESULTS : selected
     AUTH_USERS ||--o{ DRAW_RESULTS : confirms
-    ORGANIZATIONS ||--o{ MEMBER_INVITATIONS : issues
-    MEMBERS ||--o{ MEMBER_INVITATIONS : links
+    ORGANIZATIONS ||--o{ INVITATIONS : issues
+    AUTH_USERS o|--o{ INVITATIONS : accepts
     ORGANIZATIONS ||--o{ AUDIT_EVENTS : retains
     AUTH_USERS o|--o{ AUDIT_EVENTS : performs
 
@@ -225,16 +224,17 @@ erDiagram
         string eligibility_reason
         bigint arrears_paisa
     }
-    MEMBER_INVITATIONS {
+    INVITATIONS {
         uuid id PK
         uuid organization_id FK
-        uuid member_id FK
+        string recipient_identifier "username or normalized phone"
         string token_hash UK
         timestamptz expires_at
         timestamptz accepted_at
         timestamptz revoked_at
         int accepted_by FK
         int created_by FK
+        timestamptz created_at
     }
     AUDIT_EVENTS {
         uuid id PK
@@ -256,7 +256,7 @@ erDiagram
 - Save candidate snapshots, draw result, round assignment, and audit event together. If no share qualifies, create no confirmed result.
 - A selected share must appear as eligible in its snapshot. An in-person result must also pass the declared eligibility rules.
 - Draw results and snapshots are immutable. Refreshing the app cannot reroll a result.
-- Invitations are expiring, revocable, single-use credentials. Store a token hash, not the raw token; accept and link the account transactionally. A login cannot claim a member merely by entering their phone number.
+- Invitations are expiring, revocable, single-use credentials. Store a token hash, not the raw token; accept and create the organization membership transactionally. The invitation must match the logged-in user's username or phone and its single-use secret. Organizers share secrets manually with the intended recipient; passwords alone do not verify phone ownership.
 - Audit data is written by trusted backend code or triggers. Members cannot read organization-wide audit logs. Avoid storing secrets or unnecessary personal data in snapshots.
 
 ## Backend action flow
@@ -288,7 +288,7 @@ flowchart TD
 | Swap fixed turns | Verify both turns remain unpaid; update both and preserve history |
 | Record payout | Validate recipient, entitlement, available funds, and duplicate request ID |
 | Transfer share | Preserve ownership periods; explicitly transfer agreed obligations |
-| Accept invitation | Validate single-use token and link verified user to the member |
+| Accept invitation | Validate single-use token and intended login; create membership |
 | Complete/cancel committee | Reconcile obligations, cash, credits, and advances; require explicit settlement |
 | Prepare WhatsApp reminder | Authorized read of current balance; app opens share UI for organizer to send |
 
@@ -300,7 +300,7 @@ Private receipt files and database volumes must be backed up off-server. Caddy h
 
 ## Implementation order and limits
 
-1. Create organization access, committee, share, ownership, round, and installment migrations.
+1. Implement self-signup, organizations, organization memberships, and invitations; then create committee, share, ownership, round, and installment migrations.
 2. Add ledger constraints and transactional contribution/payout functions with reconciliation tests.
 3. Add transactional draws and concurrent-request tests.
 4. Add invitations, proof review, private documents, and member-access tests.

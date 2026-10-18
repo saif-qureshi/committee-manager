@@ -8,6 +8,7 @@ import testUtils from '@adonisjs/core/services/test_utils'
 import { authApiClient } from '@adonisjs/auth/plugins/api_client'
 import { sessionApiClient } from '@adonisjs/session/plugins/api_client'
 import type { Registry } from '../.adonisjs/client/registry/schema.d.ts'
+import env from '#start/env'
 
 /**
  * This file is imported by the "bin/test.ts" entrypoint file
@@ -41,7 +42,14 @@ export const plugins: Config['plugins'] = [
  * The teardown functions are executed after all the tests
  */
 export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
-  setup: [],
+  setup: [
+    () => {
+      if (env.get('DB_DATABASE') !== 'committee_manager_test') {
+        throw new Error('Tests require the isolated committee_manager_test database')
+      }
+    },
+    () => testUtils.db().migrate(),
+  ],
   teardown: [],
 }
 

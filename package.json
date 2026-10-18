@@ -16,6 +16,6 @@
     "build:backend": "pnpm --filter @committee-manager/backend build",
     "typecheck": "pnpm -r typecheck",
     "lint:backend": "pnpm --filter @committee-manager/backend lint",
-    "test": "pnpm --filter @committee-manager/backend test"
+    "test": "docker compose --profile test up -d --wait postgres-test && pnpm --filter @committee-manager/backend test"
   }
 }

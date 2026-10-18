@@ -32,7 +32,7 @@ The mobile app calls the API over HTTPS; it never connects directly to PostgreSQ
 - Run the API and PostgreSQL on a paid VPS with persistent database and upload volumes. Do not configure inactivity suspension.
 - Use Caddy as the public HTTPS reverse proxy. Keep database and API container ports private to the Docker network; only Caddy is public, alongside restricted administrative access.
 - Store production secrets outside source control. Run migrations explicitly as a deployment step with a separate database role; restrict the runtime role's permissions.
-- Use AdonisJS Auth and its hashing service for passwords and access tokens rather than implementing cryptography. Configure email verification, recovery, rate limits, token expiration and revocation, and an email provider before production.
+- Use AdonisJS Auth and its hashing service for passwords and access tokens rather than implementing cryptography. Configure identity verification, recovery, rate limits, and token expiration and revocation before production.
 - Keep financial history append-only for the runtime role; corrections create reversal entries. Authorization checks run inside backend actions, including reads, file access, and transaction writes.
 - Schedule encrypted off-server backups of PostgreSQL and receipt files. Alert on backup failures and test restoration before the pilot; persistent volumes alone are not backups.
 - Add health checks, automatic process restart, disk-space monitoring, and error alerts. Maintain separate development and production data.
@@ -44,8 +44,9 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 
 - **Organizer:** Creates committees, manages members and shares, verifies contributions, runs draws, records payouts, and exports statements.
 - **Member:** Sees their own participation, obligations, payment history, and payout status across committees.
-- Member records can exist without an app account. Linking a login to a member requires a verified invitation or organizer-approved process; matching a typed phone number is insufficient.
-- Start with AdonisJS email/password authentication for organizers. Confirm the member sign-in experience before implementing member access; phone OTP requires an SMS provider and delivery testing.
+- Organizers sign up independently; signup creates their organization and `organizer` membership together. Members register a user login and accept an invitation to create a `member` membership. Pending invitations exist before registration; there is no separate members/contact table or staff-access table.
+- Organizations have one `owner_id`. Roles belong to `organization_members`, not `users`. The same login can organize one organization and participate in others.
+- Use username or phone plus password for both organizer and member logins. Store Pakistani `03...` numbers as `+923...`; accept international E.164 numbers. Usernames are case-sensitive. Email and SMS OTP are not required in this release.
 - Authenticate and authorize every backend action. Scope queries to the user's permitted organization/member records, validate resource ownership, and authorize private file downloads. Never ship database or server credentials in the mobile app.
 
 ## Core model and rules
@@ -159,7 +160,7 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 | Partial or advance contribution | Preserve exact allocations and remaining amounts |
 | Screenshot submitted twice | Pending proof never creates two verified payments |
 | Repeated tap or network retry | One financial operation is committed |
-| Two organizers act simultaneously | Database constraints and transactions preserve one valid outcome |
+| Two devices submit actions simultaneously | Database constraints and transactions preserve one valid outcome |
 | Payment reversed after a draw | Preserve the historical eligibility snapshot and draw result; show resulting arrears |
 | Member leaves or is replaced | No deletion of obligations or history; use an explicit transfer or settlement |
 | Share transfer after payout | Require acknowledgment of remaining obligations and retain the original payout recipient |
@@ -203,7 +204,7 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 
 ### Phase 5 — Member access and communication
 
-- Implement verified member-account linking, private member views, bilingual statements, receipts, CSV export, and manual WhatsApp reminders.
+- Implement verified invitation acceptance and membership creation, private member views, bilingual statements, receipts, CSV export, and manual WhatsApp reminders.
 - Add proof submissions and optional push notifications after access rules are verified.
 
 **Done when:** A member can see only their own records and reminders reflect verified outstanding balances.
@@ -231,7 +232,7 @@ Use focused tests for these rules rather than tests that merely mirror screen im
 ## Decisions to confirm before dependent work
 
 1. Whether overdue shares remain eligible for lucky draws. Store the chosen rule before activation.
-2. Member login method and invitation/recovery experience.
+2. Phone verification and password recovery experience; username/phone plus password is the chosen login method.
 3. The group's rules for exits, replacements, defaults, and early cancellation. Do not automate an unspecified settlement policy.
 4. Whether fractional or jointly owned shares are required; excluded from the initial whole-share model.
 5. Whether organizer fees or penalties are required; excluded initially and never silently deducted from payouts.
