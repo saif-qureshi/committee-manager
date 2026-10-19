@@ -1,3 +1,4 @@
+import { Exception } from '@adonisjs/core/exceptions'
 import User from '#models/user'
 import Organization from '#models/organization'
 import OrganizationMember from '#models/organization_member'
@@ -56,7 +57,9 @@ export default class AuthService {
     }
   }
 
-  private async createSession(user: User) {
+  async createSession(user: User) {
+    if (user.isPending)
+      throw new Exception('Invalid credentials', { status: 401, code: 'E_INVALID_CREDENTIALS' })
     const token = await User.accessTokens.create(user)
     return { user, token: token.value!.release() }
   }

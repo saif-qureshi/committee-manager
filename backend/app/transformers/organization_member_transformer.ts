@@ -6,6 +6,8 @@ export default class OrganizationMemberTransformer extends BaseTransformer<Organ
   toObject() {
     return {
       ...this.pick(this.resource, ['id', 'organizationId', 'role', 'createdAt']),
+      fullName: this.resource.user.fullName,
+      phone: this.resource.user.phone,
       user: UserTransformer.transform(this.resource.user),
     }
   }

@@ -10,6 +10,8 @@
   "scripts": {
     "dev:backend": "pnpm --filter @committee-manager/backend dev",
     "dev:mobile": "pnpm --filter @committee-manager/mobile start",
+    "dev:web": "pnpm --filter @committee-manager/mobile web",
+    "test:mobile": "pnpm --filter @committee-manager/mobile test",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose stop postgres",
     "db:migrate": "pnpm --dir backend exec node ace migration:run",

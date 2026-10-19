@@ -4,18 +4,20 @@ Base path: `/api/v1`. Protected requests use `Authorization: Bearer <token>`. Cr
 
 | Method | Path | Controller action | Purpose |
 | --- | --- | --- | --- |
+| POST | `/account-claims` | `AccountClaimsController.store` | Claim a pending member account using its invitation and choose a password |
 | POST | `/users` | `UsersController.store` | Register an organizer or member login |
 | GET | `/users/me` | `UsersController.show` | Read the authenticated user's profile |
 | POST | `/sessions` | `SessionsController.store` | Log in and issue a 30-day access token |
 | DELETE | `/sessions/current` | `SessionsController.destroy` | Revoke the current token |
 | GET | `/organization` | `OrganizationsController.show` | Read the organizer's own organization |
+| POST | `/organization/members` | `OrganizationMembersController.store` | Add a member by name and phone; create a pending user if needed |
 | GET | `/organization/members` | `OrganizationMembersController.index` | List participants in the organizer's organization |
 | GET | `/memberships` | `MembershipsController.index` | List the authenticated user's memberships and roles |
 | POST | `/memberships` | `MembershipsController.store` | Accept an invitation and create a member membership |
 | POST | `/organization/invitations` | `InvitationsController.store` | Create an invitation for a username or phone |
 | DELETE | `/organization/invitations/:invitationId` | `InvitationsController.destroy` | Revoke an unused invitation |
 
-Only user registration and session creation are public. List endpoints accept a positive `page` and return up to 25 rows with pagination metadata. Responses are wrapped in `data` and exclude password/token hashes. Database timestamp sessions and API timestamp reads use UTC. The mobile client converts timestamp instants to the user's timezone for display. Date-only fields stay `YYYY-MM-DD` and are never shifted.
+User registration, session creation, and invitation-based account claiming are public. List endpoints accept a positive `page` and return up to 25 rows with pagination metadata. Responses are wrapped in `data` and exclude password/token hashes. Database timestamp sessions and API timestamp reads use UTC. The mobile client converts timestamp instants to the user's timezone for display. Date-only fields stay `YYYY-MM-DD` and are never shifted.
 
 ## Registration and login
 
@@ -52,11 +54,21 @@ The same `identifier` field accepts a stored phone or Pakistani local-format pho
 
 ## Invitations
 
+Organizers can add participants before they use the app with `POST /organization/members`:
+
+```json
+{ "fullName": "Ahmed", "phone": "03001234567" }
+```
+
+The backend normalizes the phone, creates a pending user with a cryptographically random temporary password (stored only as a hash, never returned), and creates a `member` membership. Both `users.password` and `organization_members.user_id` remain required. A matching existing user is reused without changing their name, password, or account status. Duplicate membership returns 409. Names require 1–120 characters; phones must be valid international numbers or Pakistani local mobile numbers. No messages are sent automatically.
+
+Pending users cannot sign in or use protected APIs. To enable login, the organizer creates a phone invitation through the endpoint below and shares its secret with the intended person. The member submits `POST /account-claims` with `token`, `password`, and matching `passwordConfirmation`. A valid, unused, unexpired invitation bound to that pending member sets their chosen password, clears pending status, consumes the invitation, and returns a session. Existing user/member IDs, slots, and payment history stay unchanged. Claims cannot reset an already active user's password. The mobile invitation/claim screens are still pending.
+
 The organizer sends `{ "identifier": "03001234567" }` to `POST /organization/invitations`. A registered username is also accepted; phone invitations can be issued before signup. The response includes an invitation ID, expiry, and a secret token for manual sharing. The token is returned once; only its SHA-256 hash is stored.
 
 The recipient registers or logs in, then sends `{ "token": "<invitation-secret>" }` to `POST /memberships`. The intended username or phone must match their authenticated profile. Acceptance creates a `member` role regardless of any supplied role/user/organization fields.
 
-Invitations expire after 72 hours. Reissuing to the same identifier revokes previous pending invitations. Accepted, revoked, expired, or already-linked invitations return a conflict. Organization locks and unique membership constraints prevent concurrent requests from creating duplicate links. Organizers can only revoke invitations within their own organization.
+Invitations expire after 72 hours. Reissuing to the same identifier revokes previous pending invitations. Accepted, revoked, or expired invitations return a conflict. Invitations to an already linked active user also return a conflict; a linked pending user can receive an account-claim invitation. Organization locks and unique membership constraints prevent concurrent requests from creating duplicate links. Organizers can only revoke invitations within their own organization.
 
 Invalid input returns 422; unauthenticated requests return 401. Missing or unauthorized resources return 404. Adonis's invalid-credentials response is 400. Contributions, lucky draws, and outgoing payout handovers are supported below.
 

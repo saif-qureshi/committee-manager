@@ -1,6 +1,6 @@
 # Committee Manager
 
-Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee drafts, numbered member slots, scheduled payout turns, schedule previews, and activation are implemented using three committee tables. Amounts use decimal PKR strings. Full/partial payout handovers, incoming contribution records, and immutable API payment history are implemented. Contributions default to collecting the full remaining amount; partial amounts are optional. Pending, overdue, and paid dues are calculated for a client-supplied calendar date. Payment corrections and cash reconciliation remain planned.
+Android-first committee savings app with a planned Urdu/English experience. This repository currently contains an Expo mobile app with Urdu/English screens and bottom navigation and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and memberships that support organizer-created pending users with invitation-based account claiming. Committee drafts, numbered member slots, scheduled payout turns, schedule previews, and activation are implemented using three committee tables. Amounts use decimal PKR strings. Full/partial payout handovers, incoming contribution records, and immutable API payment history are implemented. Contributions default to collecting the full remaining amount; partial amounts are optional. Pending, overdue, and paid dues are calculated for a client-supplied calendar date. Payment corrections and cash reconciliation remain planned.
 
 The organizer-only financial summary reports expected, received, outstanding, and overdue amounts alongside payout totals for a chosen calendar date. Its recorded net excludes organizer funding and does not represent verified cash held. See [API.md](./API.md) for the balance endpoint.
 
@@ -38,11 +38,13 @@ pnpm dev:backend
 
 ```sh
 pnpm dev:mobile
+# Or preview in a browser:
+pnpm dev:web
 ```
 
 API: `http://localhost:3333`. `GET /health` is a process liveness check, not a database readiness check.
 
-For an Android emulator, set `EXPO_PUBLIC_API_URL=http://10.0.2.2:3333` in `mobile/.env`. For a physical phone, use your computer's LAN IP and the same Wi-Fi network. Restart Expo after changing environment settings. The API URL is reserved for the upcoming client integration; the starter mobile screen does not call the API yet. Never put secrets in `EXPO_PUBLIC_*` variables.
+For an Android emulator, set `EXPO_PUBLIC_API_URL=http://10.0.2.2:3333` in `mobile/.env`. For a physical phone, use your computer's LAN IP and the same Wi-Fi network. Restart Expo after changing environment settings. The mobile app uses this URL for registration, login, profile, committee lists, and member lists. Never put secrets in `EXPO_PUBLIC_*` variables.
 
 ## Directory structure
 
@@ -65,13 +67,14 @@ backend/
   tests/               Japa tests
 mobile/
   src/
-    app/               Expo Router screens and layouts
+    app/               Protected Expo Router routes and bottom tabs
     components/        Reusable UI
-    features/          Future committee, payment, and draw features
-    i18n/              Initial English and Urdu translation resources
-    lib/               Future API/auth clients
-    theme/             Future shared styling
-  assets/fonts/        Reserved bundled fonts
+    features/          Authentication, committee overview, and member list
+    i18n/              Shared Urdu/English translation resources
+    lib/               API client, query client, and providers
+    stores/            Persisted language preference
+    theme.ts           Shared colors, typography, spacing, and radii
+  assets/              App icons; fonts bundle through Expo font packages
 deploy/                Reserved production deployment configuration
 docs/
   README.md            Setup and project structure
@@ -84,7 +87,7 @@ pnpm-workspace.yaml    Backend and mobile workspace packages
 pnpm-lock.yaml         Shared dependency lockfile
 ```
 
-Keep AdonisJS's conventional directories. Add a controller, validator, and action service when a feature needs them; do not create a second module hierarchy. Mobile authentication route groups will be added with their screens.
+Keep AdonisJS's conventional directories. Add a controller, validator, and action service when a feature needs them; do not create a second module hierarchy. Mobile routes remain thin; screen code and API calls belong inside their features.
 
 ### Type placement
 
@@ -108,6 +111,7 @@ Write schema changes through the TypeScript schema builder. Running migrations r
 ```sh
 pnpm typecheck
 pnpm lint:backend
+pnpm test:mobile
 pnpm test
 pnpm build:backend
 ```
@@ -118,4 +122,4 @@ The REST API is documented in [API.md](./API.md). Controllers only use resource 
 
 `pnpm test` starts a separate temporary PostgreSQL instance on port 5437. The runner refuses to migrate any database other than `committee_manager_test`; tests never reset the development database.
 
-Urdu resources and a font directory are present; language switching, RTL integration, and a bundled Urdu font are not implemented yet. VPS deployment and off-server backups are planned, not provisioned.
+Urdu/English language switching, direction-aware shared screens, and bundled fonts are implemented. Physical-device Urdu/RTL validation remains pending. See [MOBILE.md](./MOBILE.md) for mobile setup, scope, and checks. VPS deployment and off-server backups are planned, not provisioned.

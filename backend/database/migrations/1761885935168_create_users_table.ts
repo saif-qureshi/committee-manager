@@ -15,6 +15,7 @@ export default class extends BaseSchema {
         'users_login_identifier_required'
       )
       table.string('password').notNullable()
+      table.boolean('is_pending').notNullable().defaultTo(false)
 
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').nullable()

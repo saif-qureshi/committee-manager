@@ -34,7 +34,8 @@ erDiagram
         string full_name "nullable"
         string username UK "nullable"
         string phone UK "nullable; normalized"
-        string password "hashed"
+        string password "required; hashed"
+        boolean is_pending "false after signup or claim"
         timestamptz created_at
         timestamptz updated_at "nullable"
     }
@@ -153,7 +154,8 @@ erDiagram
 - Each user must have a username or phone; either identifier is unique when supplied. Passwords and invitation/token secrets are hashed.
 - An organizer signs up independently. Signup atomically creates their user, organization, and organizer membership. Each user owns at most one organization.
 - Roles belong to organization memberships. A user may organize their own group and participate in others. No separate members or staff-access table exists.
-- Invitation acceptance creates a member membership only. Invitations are recipient-bound, expiring, revocable, and single-use. The secret is shared manually; phone ownership verification remains pending.
+- Organizers may add a name and phone before the person uses the app. The backend creates a pending user with a unique random temporary password hash and a required membership user link. Existing users are reused without altering their credentials. Pending accounts cannot authenticate; a recipient-bound invitation claim sets their password and enables login while preserving the same user and membership IDs.
+- Invitation acceptance for a separately registered login creates a member membership only. Invitations are recipient-bound, expiring, revocable, and single-use. The secret is shared manually; phone ownership verification remains pending.
 - Controllers resolve the organization through the authenticated user and authorize through Bouncer before passing scoped records to services.
 
 ## Slots and payout turns

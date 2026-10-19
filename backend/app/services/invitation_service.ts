@@ -4,7 +4,7 @@ import { Exception } from '@adonisjs/core/exceptions'
 import db from '@adonisjs/lucid/services/db'
 import OrganizationMember from '#models/organization_member'
 import Organization from '#models/organization'
-import type User from '#models/user'
+import User from '#models/user'
 import Invitation from '#models/invitation'
 
 export default class InvitationService {
@@ -19,8 +19,9 @@ export default class InvitationService {
         .whereHas('user', (query) =>
           query.where('username', identifier).orWhere('phone', identifier)
         )
+        .preload('user')
         .first()
-      if (existing) {
+      if (existing && !existing.user.isPending) {
         throw new Exception('User is already a member', { status: 409, code: 'E_MEMBER_LINKED' })
       }
       const now = DateTime.utc()
@@ -93,6 +94,41 @@ export default class InvitationService {
       invitation.merge({ acceptedBy: user.id, acceptedAt: now })
       await invitation.save()
       return membership
+    })
+  }
+
+  claim(token: string, password: string) {
+    return db.transaction(async (trx) => {
+      const invitation = await Invitation.query({ client: trx })
+        .where('token_hash', createHash('sha256').update(token).digest('hex'))
+        .firstOrFail()
+      await Organization.query({ client: trx })
+        .where('id', invitation.organizationId)
+        .forUpdate()
+        .firstOrFail()
+      await invitation.refresh()
+      const now = DateTime.utc()
+      if (
+        invitation.acceptedAt ||
+        invitation.revokedAt ||
+        invitation.expiresAt.toMillis() <= now.toMillis()
+      )
+        throw new Exception('Invitation is unavailable', { status: 409 })
+      const user = await User.query({ client: trx })
+        .where('phone', invitation.recipientIdentifier)
+        .forUpdate()
+        .firstOrFail()
+      const member = await OrganizationMember.query({ client: trx })
+        .where('organization_id', invitation.organizationId)
+        .where('user_id', user.id)
+        .first()
+      if (!user.isPending || !member || member.role !== 'member')
+        throw new Exception('Account is unavailable', { status: 409 })
+      user.merge({ password, isPending: false })
+      await user.save()
+      invitation.merge({ acceptedBy: user.id, acceptedAt: now })
+      await invitation.save()
+      return user
     })
   }
 

@@ -258,7 +258,7 @@ export class OrganizationSchema extends BaseModel {
 }
 
 export class UserSchema extends BaseModel {
-  static $columns = ['createdAt', 'fullName', 'id', 'password', 'phone', 'updatedAt', 'username'] as const
+  static $columns = ['createdAt', 'fullName', 'id', 'isPending', 'password', 'phone', 'updatedAt', 'username'] as const
   $columns = UserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -266,6 +266,8 @@ export class UserSchema extends BaseModel {
   declare fullName: string | null
   @column({ isPrimary: true })
   declare id: number
+  @column()
+  declare isPending: boolean
   @column({ serializeAs: null })
   declare password: string
   @column()

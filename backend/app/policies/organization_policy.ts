@@ -12,6 +12,10 @@ export default class OrganizationPolicy extends BasePolicy {
     return this.isOrganizer(user, organization)
   }
 
+  createMember(user: User, organization: Organization) {
+    return this.isOrganizer(user, organization)
+  }
+
   createInvitation(user: User, organization: Organization) {
     return this.isOrganizer(user, organization)
   }

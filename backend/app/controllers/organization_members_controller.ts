@@ -3,6 +3,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import OrganizationPolicy from '#policies/organization_policy'
 import MembershipService from '#services/membership_service'
 import OrganizationMemberTransformer from '#transformers/organization_member_transformer'
+import { createOrganizationMemberValidator } from '#validators/organization_member'
 import { paginationValidator } from '#validators/pagination'
 
 @inject()
@@ -15,5 +16,14 @@ export default class OrganizationMembersController {
     await bouncer.with(OrganizationPolicy).authorize('viewMembers', organization)
     const members = await this.membershipsService.listForOrganizer(organization, page)
     return serialize(OrganizationMemberTransformer.paginate(members.all(), members.getMeta()))
+  }
+
+  async store({ auth, bouncer, request, response, serialize }: HttpContext) {
+    const input = await request.validateUsing(createOrganizationMemberValidator)
+    const organization = await auth.getUserOrFail().related('organization').query().firstOrFail()
+    await bouncer.with(OrganizationPolicy).authorize('createMember', organization)
+    const member = await this.membershipsService.create(organization, input)
+    response.status(201)
+    return serialize(OrganizationMemberTransformer.transform(member))
   }
 }

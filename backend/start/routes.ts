@@ -9,6 +9,7 @@ router
   .group(() => {
     router.post('users', [controllers.Users, 'store'])
     router.post('sessions', [controllers.Sessions, 'store'])
+    router.post('account-claims', [controllers.AccountClaims, 'store'])
 
     router
       .group(() => {
@@ -16,6 +17,7 @@ router
         router.delete('sessions/current', [controllers.Sessions, 'destroy'])
         router.get('organization', [controllers.Organizations, 'show'])
         router.get('organization/members', [controllers.OrganizationMembers, 'index'])
+        router.post('organization/members', [controllers.OrganizationMembers, 'store'])
         router.get('organization/committees', [controllers.Committees, 'index'])
         router.post('organization/committees', [controllers.Committees, 'store'])
         router.get('organization/committees/:committeeId', [controllers.Committees, 'show'])
