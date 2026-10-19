@@ -32,6 +32,116 @@ export class AuthAccessTokenSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class CommitteeMemberSchema extends BaseModel {
+  static $columns = ['committeeId', 'createdAt', 'id', 'organizationId', 'organizationMemberId', 'slotNumber', 'updatedAt'] as const
+  $columns = CommitteeMemberSchema.$columns
+  @column()
+  declare committeeId: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare organizationMemberId: string | null
+  @column()
+  declare slotNumber: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
+export class CommitteePayoutPaymentSchema extends BaseModel {
+  static $columns = ['amount', 'committeeId', 'createdAt', 'id', 'organizationId', 'organizationMemberId', 'paidOn', 'paymentMethod', 'payoutId', 'recordedBy', 'reference', 'requestId'] as const
+  $columns = CommitteePayoutPaymentSchema.$columns
+  @column()
+  declare amount: string
+  @column()
+  declare committeeId: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare organizationMemberId: string
+  @column.date()
+  declare paidOn: DateTime
+  @column()
+  declare paymentMethod: string
+  @column()
+  declare payoutId: string
+  @column()
+  declare recordedBy: number
+  @column()
+  declare reference: string | null
+  @column()
+  declare requestId: string
+}
+
+export class CommitteePayoutSchema extends BaseModel {
+  static $columns = ['committeeId', 'committeeMemberId', 'createdAt', 'dueDate', 'expectedAmount', 'id', 'organizationId', 'paidAmount', 'paidAt', 'roundNumber', 'selectedAt', 'status', 'updatedAt'] as const
+  $columns = CommitteePayoutSchema.$columns
+  @column()
+  declare committeeId: string
+  @column()
+  declare committeeMemberId: string | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.date()
+  declare dueDate: DateTime
+  @column()
+  declare expectedAmount: string
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare paidAmount: string
+  @column.dateTime()
+  declare paidAt: DateTime | null
+  @column()
+  declare roundNumber: number
+  @column.dateTime()
+  declare selectedAt: DateTime | null
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
+export class CommitteeSchema extends BaseModel {
+  static $columns = ['activatedAt', 'contributionAmount', 'createdAt', 'firstDueDate', 'frequency', 'id', 'name', 'organizationId', 'overdueDrawAllowed', 'selectionType', 'slotCount', 'status', 'updatedAt'] as const
+  $columns = CommitteeSchema.$columns
+  @column.dateTime()
+  declare activatedAt: DateTime | null
+  @column()
+  declare contributionAmount: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.date()
+  declare firstDueDate: DateTime
+  @column()
+  declare frequency: string
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare name: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare overdueDrawAllowed: boolean | null
+  @column()
+  declare selectionType: string
+  @column()
+  declare slotCount: number
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
 export class InvitationSchema extends BaseModel {
   static $columns = ['acceptedAt', 'acceptedBy', 'createdAt', 'createdBy', 'expiresAt', 'id', 'organizationId', 'recipientIdentifier', 'revokedAt', 'tokenHash'] as const
   $columns = InvitationSchema.$columns

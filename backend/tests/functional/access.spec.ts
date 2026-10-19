@@ -70,6 +70,42 @@ test.group('Authentication and organization membership', (group) => {
     assert.isBelow(new Date(stored.expires_at).getTime(), Date.now() + 31 * 86400000)
   })
 
+  test('timestamp responses and database timestamps remain UTC for client-side display', async ({
+    client,
+    assert,
+  }) => {
+    const owner = await createOrganizer('owner')
+    const instant = DateTime.fromISO('2028-01-30T23:30:00Z', { setZone: true })
+    owner.user.createdAt = instant.setZone('Pacific/Auckland')
+    await owner.user.save()
+    const profile = await client.request('/api/v1/users/me', 'GET').loginAs(owner.user)
+    profile.assertStatus(200)
+    assert.equal(DateTime.fromISO(profile.body().data.createdAt, { setZone: true }).offset, 0)
+    assert.equal(DateTime.fromISO(profile.body().data.createdAt).toMillis(), instant.toMillis())
+    assert.isNull(profile.body().data.phone)
+    const stored = await db.from('users').where('id', owner.user.id).firstOrFail()
+    assert.equal(stored.created_at.toISOString(), '2028-01-30T23:30:00.000Z')
+    const timezone = await db.rawQuery('SHOW timezone')
+    assert.equal(timezone.rows[0].TimeZone, 'UTC')
+    const members = await client.request('/api/v1/organization/members', 'GET').loginAs(owner.user)
+    members.assertStatus(200)
+    assert.equal(
+      DateTime.fromISO(members.body().data[0].user.createdAt, { setZone: true }).offset,
+      0
+    )
+    const invitation = await client
+      .request('/api/v1/organization/invitations', 'POST')
+      .loginAs(owner.user)
+      .json({ identifier: 'recipient' })
+    invitation.assertStatus(201)
+    assert.equal(DateTime.fromISO(invitation.body().data.expiresAt, { setZone: true }).offset, 0)
+    const row = await db.from('invitations').where('id', invitation.body().data.id).firstOrFail()
+    assert.equal(
+      DateTime.fromISO(invitation.body().data.expiresAt).toMillis(),
+      row.expires_at.getTime()
+    )
+  })
+
   test('signup requires a unique username or phone and validates passwords', async ({
     client,
     assert,

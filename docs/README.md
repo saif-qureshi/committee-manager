@@ -1,6 +1,6 @@
 # Committee Manager
 
-Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee and financial features are not implemented yet.
+Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee drafts, numbered member slots, scheduled payout turns, schedule previews, and activation are implemented using three committee tables. Amounts use decimal PKR strings. Full/partial payout handovers and immutable API payment history are implemented. Incoming contribution tracking, payment corrections, cash reconciliation, and lucky-draw execution remain planned.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ pnpm db:up
 pnpm db:migrate
 ```
 
-The database listens on `127.0.0.1:5436` to avoid common local PostgreSQL ports. Example credentials are for local development only. Database data persists in a named Docker volume; `pnpm db:down` stops the database without deleting it.
+The database listens on `127.0.0.1:5436` to avoid common local PostgreSQL ports. Database sessions and API timestamps use UTC; `TZ=UTC` keeps the process clock in UTC. The mobile client formats timestamps in the user's timezone. Calendar dates stay `YYYY-MM-DD` and must not be shifted. Example credentials are for local development only. Database data persists in a named Docker volume; `pnpm db:down` stops the database without deleting it.
 
 Start the apps in separate terminals:
 

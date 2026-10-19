@@ -13,6 +13,11 @@ export default defineConfig({
         password: env.get('DB_PASSWORD').release(),
         database: env.get('DB_DATABASE'),
       },
+      pool: {
+        afterCreate: (connection, done) => {
+          connection.query("SET TIME ZONE 'UTC'", (error: Error | null) => done(error, connection))
+        },
+      },
       migrations: {
         naturalSort: true,
         paths: ['database/migrations'],

@@ -53,6 +53,8 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 
 ### Committees and shares
 
+The implemented setup uses `committees`, `committee_members` (one row per whole-share slot), and `committee_payouts` (scheduled turns and recipients). Contribution obligations are calculated from settings and the schedule; there is no stored installments or ownership-history table. Outgoing full/partial handovers are recorded in `committee_payout_payments`; incoming contribution records, corrections, and cash reconciliation remain in the financial phase.
+
 - Each committee has its own members, contribution schedule, payout order or draw history, and financial records.
 - A share is one contribution obligation and one payout entitlement. A person may hold several shares and participate in several committees.
 - The initial model supports whole shares only. Fractional shares and joint ownership are deferred until their rules are agreed.
@@ -67,8 +69,8 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 
 - Initially support weekly and monthly installments, with explicit due dates and a preview before activation.
 - For monthly schedules anchored to the 29th–31st, use the last available day in shorter months and return to the original anchor in later months.
-- Use Asia/Karachi for committee due dates. Store audit timestamps in UTC and payment dates separately from entry timestamps.
-- Store PKR amounts as integer paisa, with positive-amount validation and safe numeric bounds. Do not calculate balances using floating-point currency values.
+- Store due/payment dates as calendar dates without timezone conversion. Store and return event timestamps in UTC; the mobile client formats them in the user's timezone.
+- Store PKR amounts in exact `decimal(14,2)` columns and exchange them as strings. Perform calculations with exact integer minor units internally, never floating-point currency values.
 - Derive balances from payment allocations, payouts, and linked reversals rather than editable balance fields.
 
 ## Functional scope
@@ -108,6 +110,8 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 - Correct verified records using linked reversals and replacement entries, with a required reason.
 
 ### 5. Payouts and shortfalls
+
+Implemented backend: full/partial handover records, recipient/actor snapshots, request retry protection, overpayment protection, and `selected` → `partially_paid` → `paid` round states. Cash reconciliation, corrections, acknowledgments, and mobile screens remain pending.
 
 - Keep scheduled/selected recipient, amount owed, and actual disbursement separate.
 - Record full or partial payouts, payment date, method, reference, and acknowledgment status.

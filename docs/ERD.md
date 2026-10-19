@@ -1,33 +1,35 @@
-# Committee Manager — ERD and Backend Actions
+# Committee Manager — Current Database Design
 
-Database design for [PLAN.md](./PLAN.md). Users, organizations, organization memberships, and invitations are implemented; committee and financial tables remain planned. See [README.md](./README.md) for the current scaffold.
+The committee setup uses three tables: `committees`, `committee_members`, and `committee_payouts`. Payout handovers use an additional `committee_payout_payments` history table. Identity and organization access use the existing users, organizations, memberships, and invitations. AdonisJS's `auth_access_tokens` table is omitted from the diagram.
 
-Amounts are integer paisa in PostgreSQL `bigint`. Financial calculations must preserve integer precision in backend and mobile code. Domain IDs are UUIDs; the starter authentication users use integer IDs. Event timestamps are timezone-aware, and installment due dates are local calendar dates.
+Domain IDs are UUIDs; user IDs are integers. All event timestamps use PostgreSQL `timestamptz` and UTC. Clients convert event timestamps to the user's timezone for display. Calendar dates remain `date` values and are never timezone-converted.
 
-## 1. Accounts, committees, and shares
-
-An organizer signs up independently. Signup creates their organization and their `organizer` row in `organization_members` atomically. Members use the same `users` table and join through an invitation. A user can organize their own group and participate in others; there is no administrator-created organizer or staff-access flow. `AUTH_USERS` represents the AdonisJS `users` table; its access-token table is omitted. User IDs are integers and domain IDs are UUIDs.
+Amounts are PKR `decimal(14,2)` values, exposed as strings. Calculations use exact integer minor units internally. Contributions are limited to Rs 9,999,999,999.99 and slot counts to 100 so every expected payout fits the decimal column.
 
 ```mermaid
 erDiagram
-    AUTH_USERS ||--o| ORGANIZATIONS : owns
-    AUTH_USERS ||--o{ ORGANIZATION_MEMBERS : participates
+    USERS ||--o| ORGANIZATIONS : owns
+    USERS ||--o{ ORGANIZATION_MEMBERS : joins
     ORGANIZATIONS ||--|{ ORGANIZATION_MEMBERS : includes
+    ORGANIZATIONS ||--o{ INVITATIONS : issues
+    USERS o|--o{ INVITATIONS : accepts
     ORGANIZATIONS ||--o{ COMMITTEES : manages
-    COMMITTEES ||--o{ SHARES : contains
-    SHARES ||--o{ SHARE_OWNERSHIPS : has_history
-    ORGANIZATION_MEMBERS ||--o{ SHARE_OWNERSHIPS : holds
-    COMMITTEES ||--o{ ROUNDS : schedules
-    SHARES o|--o{ ROUNDS : assigned_recipient
-    ROUNDS ||--o{ INSTALLMENTS : requires
-    SHARES ||--o{ INSTALLMENTS : owes
-    SHARE_OWNERSHIPS ||--o{ INSTALLMENTS : responsible_for
+    COMMITTEES ||--|{ COMMITTEE_MEMBERS : contains_slots
+    ORGANIZATION_MEMBERS o|--o{ COMMITTEE_MEMBERS : holds
+    COMMITTEES ||--|{ COMMITTEE_PAYOUTS : schedules
+    COMMITTEE_MEMBERS o|--o| COMMITTEE_PAYOUTS : receives
+    COMMITTEE_PAYOUTS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : records
+    ORGANIZATION_MEMBERS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : receives
+    USERS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : records
 
-    AUTH_USERS {
+    USERS {
         int id PK
-        string username "nullable; unique"
-        string phone "nullable; unique; normalized"
-        string password "hashed; never serialized"
+        string full_name "nullable"
+        string username UK "nullable"
+        string phone UK "nullable; normalized"
+        string password "hashed"
+        timestamptz created_at
+        timestamptz updated_at "nullable"
     }
     ORGANIZATIONS {
         uuid id PK
@@ -42,268 +44,112 @@ erDiagram
         string role "organizer or member"
         timestamptz created_at
     }
-    COMMITTEES {
-        uuid id PK
-        uuid organization_id FK
-        string name
-        string status "draft, active, completed, cancelled"
-        string selection_type "fixed or draw"
-        string frequency "weekly or monthly"
-        date first_due_date
-        bigint contribution_paisa
-        int share_count
-        boolean overdue_draw_allowed
-        timestamptz activated_at
-        timestamptz archived_at
-    }
-    SHARES {
-        uuid id PK
-        uuid committee_id FK
-        int share_number
-    }
-    SHARE_OWNERSHIPS {
-        uuid id PK
-        uuid share_id FK
-        uuid organization_member_id FK
-        timestamptz starts_at
-        timestamptz ends_at "nullable while current"
-        string transfer_reason
-        int created_by FK
-    }
-    ROUNDS {
-        uuid id PK
-        uuid committee_id FK
-        int round_number
-        date due_date
-        uuid assigned_share_id FK "nullable until selected"
-        string status "scheduled, selected, settled"
-        bigint expected_payout_paisa
-    }
-    INSTALLMENTS {
-        uuid id PK
-        uuid committee_id FK
-        uuid round_id FK
-        uuid share_id FK
-        uuid responsible_ownership_id FK
-        bigint amount_due_paisa
-    }
-```
-
-### Constraints
-
-- Each user owns at most one organization. Each `(organization_id, user_id)` membership is unique. The owner has the `organizer` membership; invitation acceptance only creates `member` memberships. No public role-edit endpoint exists.
-- A user must have a unique username or phone number; both may be provided. Passwords are hashed and login identifiers are separate from membership roles.
-- Unique `(committee_id, share_number)`, `(committee_id, round_number)`, and `(round_id, share_id)`.
-- A share can be assigned to at most one round in its committee. Multiple null assignments are allowed before draws.
-- Every related share, round, installment, and ownership must belong to the same committee; members and committees must belong to the same organization. Enforce with composite foreign keys or controlled database functions, not UI checks alone.
-- No overlapping ownership periods for a share. Activation requires exactly one current owner per share.
-- Activation creates N rounds and N × N installments for N shares. All fixed-number rounds must have recipients.
-- Completed rounds retain their recipient. An audited swap is allowed only between unpaid-out fixed-number rounds.
-- Installment responsibility is explicit. Transfers must name which outstanding/future obligations move; they cannot silently rewrite the previous owner's debt or historical payments.
-
-## 2. Financial records and payment proof
-
-Use one financial ledger for actual cash movements. A positive entry increases cash held; a negative entry decreases it. Payment allocations explain which installments a receipt or refund affects. A proof submission is a request for verification, not a financial entry.
-
-```mermaid
-erDiagram
-    COMMITTEES ||--o{ MONEY_ENTRIES : records
-    ORGANIZATION_MEMBERS o|--o{ MONEY_ENTRIES : member_counterparty
-    AUTH_USERS ||--o{ MONEY_ENTRIES : records
-    MONEY_ENTRIES ||--o{ PAYMENT_ALLOCATIONS : allocates
-    INSTALLMENTS ||--o{ PAYMENT_ALLOCATIONS : receives
-    ROUNDS o|--o{ MONEY_ENTRIES : payout_for
-    SHARES o|--o{ MONEY_ENTRIES : payout_share
-    SHARE_OWNERSHIPS o|--o{ MONEY_ENTRIES : payout_recipient_snapshot
-    MONEY_ENTRIES o|--o{ MONEY_ENTRIES : reverses
-    MONEY_ENTRIES o|--o{ MONEY_ENTRIES : repays_advance
-    COMMITTEES ||--o{ PAYMENT_SUBMISSIONS : receives
-    ORGANIZATION_MEMBERS ||--o{ PAYMENT_SUBMISSIONS : submits_for
-    PAYMENT_SUBMISSIONS o|--o| MONEY_ENTRIES : verified_as
-    PAYMENT_SUBMISSIONS o|--o{ DOCUMENTS : has_proof
-    MONEY_ENTRIES o|--o{ DOCUMENTS : has_receipt
-
-    MONEY_ENTRIES {
-        uuid id PK
-        uuid committee_id FK
-        string kind "contribution, refund, payout, advance, advance_repayment, reversal"
-        bigint signed_amount_paisa
-        uuid organization_member_id FK "nullable; counterparty"
-        int advance_provider_user_id FK "nullable; organizer funding"
-        uuid round_id FK "required for payout"
-        uuid share_id FK "required for payout"
-        uuid recipient_ownership_id FK "required for payout"
-        uuid reverses_entry_id FK "nullable; unique"
-        uuid source_advance_id FK "nullable; repayment source"
-        uuid source_submission_id FK "nullable; unique"
-        string payment_method
-        string reference
-        date occurred_on
-        uuid request_id UK "retry protection"
-        int created_by FK
-        timestamptz created_at
-        string reason
-    }
-    PAYMENT_ALLOCATIONS {
-        uuid id PK
-        uuid money_entry_id FK
-        uuid installment_id FK
-        bigint signed_amount_paisa
-    }
-    PAYMENT_SUBMISSIONS {
-        uuid id PK
-        uuid committee_id FK
-        uuid organization_member_id FK
-        bigint proposed_amount_paisa
-        date claimed_payment_date
-        string reference
-        string status "pending, approved, rejected"
-        int submitted_by FK
-        int reviewed_by FK
-        timestamptz reviewed_at
-        string review_reason
-    }
-    DOCUMENTS {
-        uuid id PK
-        uuid organization_id FK
-        uuid submission_id FK "nullable"
-        uuid money_entry_id FK "nullable"
-        string storage_path UK "private object path"
-        string content_type
-        bigint byte_size
-        int uploaded_by FK
-        timestamptz created_at
-    }
-```
-
-### Ledger rules
-
-- Contributions and organizer advances are positive. Payouts, member refunds, and organizer advance repayments are negative. Reject zero amounts.
-- A reversal is the exact opposite of its original entry and copies the original attribution. It reverses allocations atomically as well. One original entry can be reversed once; corrections use reversal plus replacement. A refund is an actual new outgoing movement, not a correction.
-- Entries and allocations are append-only through controlled backend functions. No direct client update/delete access.
-- Allocation totals cannot exceed the receipt amount. Unallocated net member receipts represent credit. Refunds reduce unallocated credit or explicitly reverse installment allocations; prevent over-refunds and over-allocation under concurrent requests.
-- Positive allocation means contribution paid; negative allocation undoes that payment. Sum allocations against installments to calculate remaining obligations.
-- Payout entries must reference the selected round, share, and recipient ownership. Partial payouts are allowed; net payouts cannot exceed the round's entitlement without a separately designed amendment.
-- Every advance repayment references its original advance. Prevent repayments exceeding the outstanding advance, including corrections.
-- Verify cash availability under a committee lock. If the organizer funds a shortfall, record the advance explicitly before or in the same transaction as the payout.
-- An approved submission creates exactly one contribution entry in the same transaction. The submitter must be authorized for the member and committee.
-- Request IDs are generated before submission. Reusing an ID with the same input returns the existing result; reusing it with different input is rejected.
-- Each document has exactly one parent: submission or money entry. Access follows that parent's permissions, not a public storage URL.
-- Cash held is the sum of signed ledger amounts. Collections, payouts, credits, advances, and arrears are separate derived totals; do not add expected installments to cash held.
-- Reject a reversal that would violate existing allocations, payout entitlement, advance repayment, or cash constraints. Correct dependent records explicitly in a controlled transaction.
-
-## 3. Draws, invitations, and history
-
-```mermaid
-erDiagram
-    ROUNDS ||--o| DRAW_RESULTS : has
-    DRAW_RESULTS ||--|{ DRAW_CANDIDATES : snapshots
-    SHARES ||--o{ DRAW_CANDIDATES : evaluated_as
-    SHARE_OWNERSHIPS ||--o{ DRAW_CANDIDATES : owner_at_draw
-    SHARES ||--o{ DRAW_RESULTS : selected
-    AUTH_USERS ||--o{ DRAW_RESULTS : confirms
-    ORGANIZATIONS ||--o{ INVITATIONS : issues
-    AUTH_USERS o|--o{ INVITATIONS : accepts
-    ORGANIZATIONS ||--o{ AUDIT_EVENTS : retains
-    AUTH_USERS o|--o{ AUDIT_EVENTS : performs
-
-    DRAW_RESULTS {
-        uuid id PK
-        uuid round_id FK,UK
-        uuid selected_share_id FK
-        string method "app, in_person, automatic"
-        uuid request_id UK
-        int confirmed_by FK
-        timestamptz confirmed_at
-    }
-    DRAW_CANDIDATES {
-        uuid draw_result_id PK,FK
-        uuid share_id PK,FK
-        uuid ownership_id FK
-        boolean eligible
-        string eligibility_reason
-        bigint arrears_paisa
-    }
     INVITATIONS {
         uuid id PK
         uuid organization_id FK
         string recipient_identifier "username or normalized phone"
         string token_hash UK
         timestamptz expires_at
-        timestamptz accepted_at
-        timestamptz revoked_at
-        int accepted_by FK
+        timestamptz accepted_at "nullable"
+        timestamptz revoked_at "nullable"
+        int accepted_by FK "nullable"
         int created_by FK
         timestamptz created_at
     }
-    AUDIT_EVENTS {
+    COMMITTEES {
         uuid id PK
         uuid organization_id FK
-        uuid committee_id FK "nullable"
-        int actor_user_id FK "nullable for system actions"
-        string action
-        string entity_type
-        uuid entity_id
-        jsonb before_data
-        jsonb after_data
-        string reason
+        string name
+        decimal contribution_amount "PKR; 14,2"
+        int slot_count "1 to 100"
+        string selection_type "fixed or draw"
+        string frequency "weekly or monthly"
+        date first_due_date
+        boolean overdue_draw_allowed "nullable until decided"
+        string status "draft or active"
+        timestamptz activated_at "nullable"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    COMMITTEE_MEMBERS {
+        uuid id PK
+        uuid organization_id FK
+        uuid committee_id FK
+        uuid organization_member_id FK "nullable while unassigned"
+        int slot_number
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    COMMITTEE_PAYOUTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid committee_id FK
+        int round_number
+        date due_date
+        uuid committee_member_id FK "nullable before selection"
+        decimal expected_amount "PKR; 14,2"
+        decimal paid_amount "transactionally maintained total"
+        string status "scheduled, selected, partially_paid, paid"
+        timestamptz paid_at "nullable; full-payment recording time"
+        timestamptz selected_at "nullable until finalized"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    COMMITTEE_PAYOUT_PAYMENTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid committee_id FK
+        uuid payout_id FK
+        uuid organization_member_id FK "recipient snapshot"
+        decimal amount "PKR; 14,2"
+        date paid_on
+        string payment_method
+        string reference "nullable"
+        int recorded_by FK
+        uuid request_id "unique within organization"
         timestamptz created_at
     }
 ```
 
-- Lock the committee while evaluating eligibility and confirming a draw. Serialize relevant financial changes against that lock so the eligibility snapshot is coherent.
-- Snapshot all not-yet-selected shares with their eligibility decision, ownership, and arrears. Pick only from eligible shares using secure backend randomness.
-- Save candidate snapshots, draw result, round assignment, and audit event together. If no share qualifies, create no confirmed result.
-- A selected share must appear as eligible in its snapshot. An in-person result must also pass the declared eligibility rules.
-- Draw results and snapshots are immutable. Refreshing the app cannot reroll a result.
-- Invitations are expiring, revocable, single-use credentials. Store a token hash, not the raw token; accept and create the organization membership transactionally. The invitation must match the logged-in user's username or phone and its single-use secret. Organizers share secrets manually with the intended recipient; passwords alone do not verify phone ownership.
-- Audit data is written by trusted backend code or triggers. Members cannot read organization-wide audit logs. Avoid storing secrets or unnecessary personal data in snapshots.
+## Identity and access
 
-## Backend action flow
+- Each user must have a username or phone; either identifier is unique when supplied. Passwords and invitation/token secrets are hashed.
+- An organizer signs up independently. Signup atomically creates their user, organization, and organizer membership. Each user owns at most one organization.
+- Roles belong to organization memberships. A user may organize their own group and participate in others. No separate members or staff-access table exists.
+- Invitation acceptance creates a member membership only. Invitations are recipient-bound, expiring, revocable, and single-use. The secret is shared manually; phone ownership verification remains pending.
+- Controllers resolve the organization through the authenticated user and authorize through Bouncer before passing scoped records to services.
 
-The backend is one self-hosted Node.js/AdonisJS API with PostgreSQL, running on a paid VPS. The mobile app connects only to the API over HTTPS. We are building our own backend rather than self-hosting the Supabase platform.
+## Slots and payout turns
 
-```mermaid
-flowchart TD
-    A[Expo mobile app] --> P[Caddy HTTPS proxy]
-    P --> B[AdonisJS API: verify access token]
-    B --> C[Authorized reads scoped to organization or member]
-    B --> D[Authenticated backend action]
-    D --> E[Validate input and check user permissions]
-    E --> F[PostgreSQL transaction: lock, recheck rules, write]
-    F --> G[Ledger and related records]
-    F --> H[Audit history]
-    F --> I[Committed result returned to app]
-    D --> J[Private uploads or external service integration]
-```
+A `committee_members` row is a numbered slot, not a distinct person. For example, Ahmed holding slots 1 and 3 has two rows pointing to the same organization membership. Each slot contributes every round and has one payout entitlement.
 
-| Action | Backend responsibility |
-| --- | --- |
-| Create/edit draft committee | Verify organizer access; validate settings and ownership |
-| Activate committee | Lock settings; create schedule and installments atomically |
-| Record contribution | Verify organizer; write ledger entry, allocations, and history together |
-| Approve payment proof | Lock pending submission; create one verified contribution |
-| Correct financial record | Verify dependencies; append reversal and any replacement atomically |
-| Run/record draw | Lock committee; snapshot eligibility; select and persist one result |
-| Swap fixed turns | Verify both turns remain unpaid; update both and preserve history |
-| Record payout | Validate recipient, entitlement, available funds, and duplicate request ID |
-| Transfer share | Preserve ownership periods; explicitly transfer agreed obligations |
-| Accept invitation | Validate single-use token and intended login; create membership |
-| Complete/cancel committee | Reconcile obligations, cash, credits, and advances; require explicit settlement |
-| Prepare WhatsApp reminder | Authorized read of current balance; app opens share UI for organizer to send |
+Draft creation creates N slots and N payout turns. Fixed turns initially reference the same-numbered slots; draw turns have null recipients. Every draft payout has `scheduled` status and null `selected_at`. Payout assignments live only in `committee_payouts`; member rows do not duplicate a payout-turn column.
 
-Implement actions as AdonisJS controllers backed by small action services. Use a Lucid managed transaction, lock the relevant records, check business rules, and commit financial records and audit history together. Use Lucid models or its query builder with bound parameters. Use a database function only when it is the smallest way to enforce a shared invariant; no separate worker or function-hosting platform is needed initially.
+- Unique `(committee_id, slot_number)` prevents duplicate slots.
+- Unique `(committee_id, round_number)` prevents duplicate rounds.
+- Unique non-null `(committee_id, committee_member_id)` prevents a slot receiving two turns. Several unselected turns may have null recipients.
+- Composite foreign keys enforce that an assigned organization member belongs to the same organization and a recipient slot belongs to the same committee and organization.
+- Database checks require positive amounts, valid number bounds, and consistent selection status/timestamps.
+- Bulk assignment updates require every slot or round exactly once, reject foreign/duplicate recipients, and roll back on failure.
 
-The app may validate forms for convenience, but the API repeats all trust-boundary checks using VineJS validators. Validate AdonisJS access tokens and organization/member permissions on every protected request. Keep PostgreSQL off the public network and deny direct mobile database access. Use a restricted runtime database role, separate migration credentials, and authorized file routes over a private upload volume. Database row-level security may be added as defense in depth; the initial design relies on tested API authorization and database constraints.
+## Draft editing and activation
 
-Private receipt files and database volumes must be backed up off-server. Caddy handles HTTPS, while Docker Compose manages the API, database, and proxy on one VPS. Health checks, restart policies, disk monitoring, and backup alerts are part of production readiness. One VPS remains a single point of failure.
+Member assignments and fixed turn assignments can be replaced while draft. Null assignments allow unfinished setup. Slot count or payout mode changes require clearing member assignments first. Resizing regenerates slots and payout rows; mode changes reset turn assignments. Other setting changes refresh dates and expected amounts while retaining assigned turns.
 
-## Implementation order and limits
+Monthly schedules calculate every date from the original anchor, so Jan 31 → Feb 29 → Mar 31 in a leap year. Weekly schedules advance seven calendar days. Expected payout equals the contribution multiplied by slot count. Each slot's total expected contribution over the full cycle is the same product.
 
-1. Implement self-signup, organizations, organization memberships, and invitations; then create committee, share, ownership, round, and installment migrations.
-2. Add ledger constraints and transactional contribution/payout functions with reconciliation tests.
-3. Add transactional draws and concurrent-request tests.
-4. Add invitations, proof review, private documents, and member-access tests.
-5. Add controlled transfers, settlement/closure actions, and restoration verification before the pilot.
+Preview reads the stored schedule without writing. Activation requires every slot to have an organization member, every fixed turn to have a recipient slot, and draw committees to have an explicit overdue eligibility rule. Fixed turns become `selected` and receive `selected_at`; draw turns stay `scheduled` and unselected. Selection never means cash was disbursed.
 
-This design assumes whole shares, one payout entitlement per share, fixed contribution amounts after activation, and online financial writes. Fractional shares, fees, penalties, and automated settlement rules need separate decisions before extending the schema.
+Services lock the committee inside a transaction for settings, assignments, previews, and activation. Retried activation returns the existing active state without duplicating rows. Active committees reject setup edits, member replacements, and turn replacements.
+
+## Derived obligations and deferred records
+
+There is no stored installments table or ownership-history table. A slot owes the committee contribution for each scheduled round; those expected obligations are calculated when needed. Receiving a payout does not remove later contribution obligations.
+
+Payout handovers are now recorded individually in `committee_payout_payments`. Records retain the recipient membership and recording user, amount, actual handover date, method, reference, and UTC recording time. No API update/delete operation exists. Request IDs are unique per organization, and identical retries return the original record.
+
+Recording locks the committee and payout in that order, sums handover history, checks the cached total and remaining entitlement, then inserts the history and updates `paid_amount`, status, and `paid_at` in one transaction. Database checks keep paid totals between zero and the expected amount and require consistent status/selection/payment timestamps. Partial handovers produce `partially_paid`; reaching the entitlement produces `paid`. `paid_at` is the final recording timestamp, distinct from `paid_on`.
+
+Incoming contributions, cash reconciliation, credits/refunds, payment corrections, proof documents, recipient acknowledgment, draw execution/history, transfers, cancellation, and committee completion remain future work. Manual handover records do not verify bank/wallet settlement or available cash. Completing a round does not automatically close the committee.
+
+See [API.md](./API.md) for endpoint contracts and [PLAN.md](./PLAN.md) for the remaining product scope.
