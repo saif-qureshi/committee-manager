@@ -58,7 +58,7 @@ The recipient registers or logs in, then sends `{ "token": "<invitation-secret>"
 
 Invitations expire after 72 hours. Reissuing to the same identifier revokes previous pending invitations. Accepted, revoked, expired, or already-linked invitations return a conflict. Organization locks and unique membership constraints prevent concurrent requests from creating duplicate links. Organizers can only revoke invitations within their own organization.
 
-Invalid input returns 422; unauthenticated requests return 401. Missing or unauthorized resources return 404. Adonis's invalid-credentials response is 400. Contributions and outgoing payout handovers are supported below. Lucky-draw execution remains pending.
+Invalid input returns 422; unauthenticated requests return 401. Missing or unauthorized resources return 404. Adonis's invalid-credentials response is 400. Contributions, lucky draws, and outgoing payout handovers are supported below.
 
 ## Current limits
 
@@ -141,7 +141,34 @@ Activation requires an assigned member for every slot, complete fixed-turn recip
 
 Invalid input/assignments return 422, incomplete activation or active edits return 409, and missing/foreign/unauthorized resources return 404. All event timestamps remain UTC; the client handles display in the user's timezone. Calendar dates remain date-only strings.
 
-Transfers, draw execution, cancellation, and committee completion remain deferred. Incoming contributions and outgoing handovers use the records below.
+Transfers, cancellation, and committee completion remain deferred. Lucky draws, incoming contributions, and outgoing handovers use the records below.
+
+## Lucky draws
+
+| Method | Path after `/api/v1` | Controller action | Purpose |
+| --- | --- | --- | --- |
+| POST | `/organization/committees/:committeeId/payouts/:payoutId/draw` | `CommitteeDrawsController.store` | Select and save a recipient for this round |
+| GET | `/organization/committees/:committeeId/payouts/:payoutId/draw` | `CommitteeDrawsController.show` | Reload the saved draw result |
+
+```json
+{
+  "requestId": "<client-generated-uuid>",
+  "drawnOn": "2026-10-19"
+}
+```
+
+- Only the owning organizer may create/read draws. The committee must be active, use `draw` selection, and have its overdue eligibility rule set. Fixed committees and drafts cannot run draws.
+- The organizer may draw on any day and choose any unselected scheduled round; there is no due-date or round-order restriction. `drawnOn` is the organizer-declared calendar date, validated between 1900 and 2100. It determines overdue eligibility and is not timezone-converted. UTC `createdAt` records when the backend actually saved the draw.
+- Eligibility is per numbered slot. Exclude every slot already selected for any payout, including recipients whose handovers are still pending. A person holding several slots retains eligibility on their other slots.
+- If `overdueDrawAllowed` is false, the slot must have paid all contributions for rounds with `dueDate < drawnOn`. Include only receipts with `paidOn <= drawnOn`; receipts for later rounds do not cover earlier arrears. A due-today round is not overdue. Even a remaining `"0.01"` blocks eligibility. If overdue slots are allowed, unpaid balances do not affect selection.
+- The server builds the eligible list and uses Node's cryptographic `randomInt` to select uniformly among eligible slots. A single eligible slot is selected automatically. An empty list returns 409 without recording a draw or changing the payout.
+- Save the draw and payout recipient together in a transaction, locking the committee and then the payout. The payout becomes `selected` with `selectedAt`; no handover is recorded and no paid totals change. The existing handover endpoint can then record payment to the winner.
+- Create `requestId` once and retain it for retries. The same organization, committee, payout, request ID, and `drawnOn` return the original result with 200, including after the payout is paid or receipts change. Creation returns 201. A changed request date or reuse on another round/committee returns 409. Request IDs are unique per organization.
+- A new request ID for an already-selected round returns 409; it never rerolls. Concurrent draws cannot select the same slot for two rounds. Read the saved result with GET after a lost response; a round without a saved draw returns 404.
+
+The response contains `id`, `committeeId`, `payoutId`, `committeeMemberId` (winner slot), `eligibleSlots`, `overdueDrawAllowed`, `drawnOn`, `method` (`random` or `automatic`), `recordedBy`, `requestId`, and UTC `createdAt`. Each eligible-slot snapshot includes `committeeMemberId`, `organizationMemberId`, and `slotNumber`. Winner, eligibility, method, actor, and timestamps are server-controlled; supplied values for those fields are ignored.
+
+The saved eligibility snapshot stays unchanged if later receipts are entered or backdated. This release supports app-generated draws only, with no update/delete/reroll route. In-person draw recording and mistaken-result correction workflows remain deferred.
 
 ## Record a contribution and view dues
 
@@ -237,7 +264,7 @@ A full first handover moves directly from `selected` to `paid`. Recording a paid
 }
 ```
 
-- The committee must be active and the round must have a finalized recipient. An unselected lucky-draw round cannot be paid. Draw execution remains pending.
+- The committee must be active and the round must have a finalized recipient. An unselected lucky-draw round cannot be paid; run its draw first.
 - `amount` is a positive decimal PKR string with at most two fractional digits and 12 integer digits. It must not exceed the round's remaining entitlement. Values are normalized to two decimal places; numeric JSON values and scientific notation are rejected.
 - `paidOn` is the handover's calendar date in `YYYY-MM-DD`, validated between the start years 1900 and 2100. It is distinct from the UTC recording timestamp and is not timezone-converted. The organizer supplies the actual date; it does not have to equal the scheduled due date.
 - `paymentMethod` is `cash`, `bank_transfer`, `easypaisa`, `jazzcash`, or `other`.

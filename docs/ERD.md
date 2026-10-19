@@ -1,6 +1,6 @@
 # Committee Manager — Current Database Design
 
-The committee setup uses three tables: `committees`, `committee_members`, and `committee_payouts`. Money received is recorded in `committee_contributions`; payout handovers use `committee_payout_payments`. Identity and organization access use the existing users, organizations, memberships, and invitations. AdonisJS's `auth_access_tokens` table is omitted from the diagram.
+The committee setup uses three tables: `committees`, `committee_members`, and `committee_payouts`. Money received is recorded in `committee_contributions`; payout handovers use `committee_payout_payments`. `committee_draws` preserves one lucky-draw result and eligibility snapshot per drawn round. Identity and organization access use the existing users, organizations, memberships, and invitations. AdonisJS's `auth_access_tokens` table is omitted from the diagram.
 
 Domain IDs are UUIDs; user IDs are integers. All event timestamps use PostgreSQL `timestamptz` and UTC. Clients convert event timestamps to the user's timezone for display. Calendar dates remain `date` values and are never timezone-converted.
 
@@ -25,6 +25,9 @@ erDiagram
     COMMITTEE_PAYOUTS ||--o{ COMMITTEE_CONTRIBUTIONS : collects_for_round
     ORGANIZATION_MEMBERS ||--o{ COMMITTEE_CONTRIBUTIONS : pays
     USERS ||--o{ COMMITTEE_CONTRIBUTIONS : records
+    COMMITTEE_PAYOUTS ||--o| COMMITTEE_DRAWS : has_result
+    COMMITTEE_MEMBERS ||--o| COMMITTEE_DRAWS : wins
+    USERS ||--o{ COMMITTEE_DRAWS : runs
 
     USERS {
         int id PK
@@ -99,6 +102,20 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    COMMITTEE_DRAWS {
+        uuid id PK
+        uuid organization_id FK
+        uuid committee_id FK
+        uuid payout_id FK,UK "one result per round"
+        uuid committee_member_id FK "winner slot; once per committee"
+        jsonb eligible_slots "slot and membership snapshots"
+        boolean overdue_draw_allowed "rule snapshot"
+        date drawn_on "organizer-declared eligibility date"
+        string method "random or automatic"
+        int recorded_by FK
+        uuid request_id "unique within organization"
+        timestamptz created_at
+    }
     COMMITTEE_CONTRIBUTIONS {
         uuid id PK
         uuid organization_id FK
@@ -162,6 +179,14 @@ Preview reads the stored schedule without writing. Activation requires every slo
 
 Services lock the committee inside a transaction for settings, assignments, previews, and activation. Retried activation returns the existing active state without duplicating rows. Active committees reject setup edits, member replacements, and turn replacements.
 
+## Lucky-draw results
+
+An active draw committee may select any unselected round on the organizer's chosen day. Slots already selected for another payout are excluded even before handover. If overdue slots are disallowed, sum receipts dated on/before `drawn_on` against obligations for rounds due before that day. Future-round receipts do not settle past arrears. Due-today obligations are not overdue. Eligibility remains per slot when one person owns several slots.
+
+Cryptographic random selection chooses among eligible slots; one eligible slot is automatic and zero blocks the action. One `committee_draws` record stores the winner, eligible slot/membership/number snapshot, rule, calendar date, actor, method, request ID, and UTC timestamp. Composite foreign keys enforce round/winner scope; uniqueness prevents multiple results per round or multiple wins per slot. JSON checks require a nonempty bounded snapshot containing the winner and a method consistent with the eligible count.
+
+The draw insert and payout recipient/selection update share a transaction. Locks serialize draws and financial writes within a committee. Matching request retries return the stored result, and another request cannot reroll a selected round. No API update/delete routes exist. Subsequent backdated receipts do not rewrite draw history. App-generated draws are implemented; in-person result recording and correction workflows remain deferred.
+
 ## Contributions, derived obligations, and handovers
 
 There is no stored installments table or ownership-history table. A slot owes the committee contribution for each scheduled round; those expected obligations are calculated when needed. Receiving a payout does not remove later contribution obligations.
@@ -174,7 +199,7 @@ Payout handovers are now recorded individually in `committee_payout_payments`. R
 
 Recording locks the committee and payout in that order, sums handover history, checks the cached total and remaining entitlement, then inserts the history and updates `paid_amount`, status, and `paid_at` in one transaction. Database checks keep paid totals between zero and the expected amount and require consistent status/selection/payment timestamps. Partial handovers produce `partially_paid`; reaching the entitlement produces `paid`. `paid_at` is the final recording timestamp, distinct from `paid_on`.
 
-Cash reconciliation, credits/refunds, payment corrections, proof documents, recipient acknowledgment, draw execution/history, transfers, cancellation, and committee completion remain future work. Manual contribution and handover records do not verify bank/wallet settlement or available cash. Completing a round does not automatically close the committee.
+Cash reconciliation, credits/refunds, payment corrections, proof documents, recipient acknowledgment, in-person draws, transfers, cancellation, and committee completion remain future work. Manual contribution and handover records do not verify bank/wallet settlement or available cash. Completing a round does not automatically close the committee.
 
 Per-committee financial summaries aggregate these existing records without another table. They report full-cycle obligations, dated receipts and handovers, overdue/pending contributions, and the signed net of recorded receipts less handovers. This net excludes organizer funding and is not verified cash held. The client supplies an `asOf` calendar date; only receipts and handovers paid on or before that date count.
 

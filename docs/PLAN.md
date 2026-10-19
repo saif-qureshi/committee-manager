@@ -91,6 +91,8 @@ The implemented setup uses `committees`, `committee_members` (one row per whole-
 
 ### 3. Lucky draws
 
+Implemented backend: app-generated draws for active draw committees, per-slot eligibility using the organizer's chosen draw date, cryptographic selection, automatic selection for one eligible slot, saved eligibility/rule snapshots, request retries, and concurrent-write protection. Draws finalize a recipient without recording a handover. No scheduled-date or round-order restriction applies. In-person draw recording, result corrections, and mobile screens remain pending.
+
 - Select from shares that have not already won, using the committee's declared overdue-payment eligibility rule.
 - Support an app draw and recording an in-person draw. Clearly identify which method produced the result.
 - Run app selection on trusted backend infrastructure using secure randomness.
@@ -207,7 +209,8 @@ Implemented backend: an organizer-only, per-committee balance endpoint reports f
 
 ### Phase 4 — Lucky draws
 
-- Implement eligibility rules, trusted selection, in-person result recording, immutable result history, and concurrency protection.
+- App-generated selection, eligibility rules, saved result history, and concurrency protection are implemented in the backend.
+- Implement in-person result recording and mobile draw screens.
 
 **Done when:** Concurrent and retried requests cannot produce duplicate winners, and a multi-share member retains eligibility on unselected shares.
 

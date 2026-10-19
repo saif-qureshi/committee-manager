@@ -60,6 +60,14 @@ export default class OrganizationPolicy extends BasePolicy {
     return this.isOrganizer(user, organization)
   }
 
+  viewDraw(user: User, organization: Organization) {
+    return this.isOrganizer(user, organization)
+  }
+
+  createDraw(user: User, organization: Organization) {
+    return this.isOrganizer(user, organization)
+  }
+
   private async isOrganizer(user: User, organization: Organization) {
     if (organization.ownerId === user.id) {
       const membership = await OrganizationMember.query()

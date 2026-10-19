@@ -36,6 +36,14 @@ router
           controllers.CommitteePayouts,
           'update',
         ])
+        router.get('organization/committees/:committeeId/payouts/:payoutId/draw', [
+          controllers.CommitteeDraws,
+          'show',
+        ])
+        router.post('organization/committees/:committeeId/payouts/:payoutId/draw', [
+          controllers.CommitteeDraws,
+          'store',
+        ])
         router.get('organization/committees/:committeeId/payouts/:payoutId/payments', [
           controllers.CommitteePayoutPayments,
           'index',

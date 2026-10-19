@@ -65,6 +65,35 @@ export class CommitteeContributionSchema extends BaseModel {
   declare requestId: string
 }
 
+export class CommitteeDrawSchema extends BaseModel {
+  static $columns = ['committeeId', 'committeeMemberId', 'createdAt', 'drawnOn', 'eligibleSlots', 'id', 'method', 'organizationId', 'overdueDrawAllowed', 'payoutId', 'recordedBy', 'requestId'] as const
+  $columns = CommitteeDrawSchema.$columns
+  @column()
+  declare committeeId: string
+  @column()
+  declare committeeMemberId: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.date()
+  declare drawnOn: DateTime
+  @column()
+  declare eligibleSlots: any
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare method: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare overdueDrawAllowed: boolean
+  @column()
+  declare payoutId: string
+  @column()
+  declare recordedBy: number
+  @column()
+  declare requestId: string
+}
+
 export class CommitteeMemberSchema extends BaseModel {
   static $columns = ['committeeId', 'createdAt', 'id', 'organizationId', 'organizationMemberId', 'slotNumber', 'updatedAt'] as const
   $columns = CommitteeMemberSchema.$columns
