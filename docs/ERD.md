@@ -1,6 +1,6 @@
 # Committee Manager — Current Database Design
 
-The committee setup uses three tables: `committees`, `committee_members`, and `committee_payouts`. Payout handovers use an additional `committee_payout_payments` history table. Identity and organization access use the existing users, organizations, memberships, and invitations. AdonisJS's `auth_access_tokens` table is omitted from the diagram.
+The committee setup uses three tables: `committees`, `committee_members`, and `committee_payouts`. Money received is recorded in `committee_contributions`; payout handovers use `committee_payout_payments`. Identity and organization access use the existing users, organizations, memberships, and invitations. AdonisJS's `auth_access_tokens` table is omitted from the diagram.
 
 Domain IDs are UUIDs; user IDs are integers. All event timestamps use PostgreSQL `timestamptz` and UTC. Clients convert event timestamps to the user's timezone for display. Calendar dates remain `date` values and are never timezone-converted.
 
@@ -21,6 +21,10 @@ erDiagram
     COMMITTEE_PAYOUTS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : records
     ORGANIZATION_MEMBERS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : receives
     USERS ||--o{ COMMITTEE_PAYOUT_PAYMENTS : records
+    COMMITTEE_MEMBERS ||--o{ COMMITTEE_CONTRIBUTIONS : contributes
+    COMMITTEE_PAYOUTS ||--o{ COMMITTEE_CONTRIBUTIONS : collects_for_round
+    ORGANIZATION_MEMBERS ||--o{ COMMITTEE_CONTRIBUTIONS : pays
+    USERS ||--o{ COMMITTEE_CONTRIBUTIONS : records
 
     USERS {
         int id PK
@@ -95,6 +99,22 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    COMMITTEE_CONTRIBUTIONS {
+        uuid id PK
+        uuid organization_id FK
+        uuid committee_id FK
+        uuid committee_member_id FK "payer slot"
+        uuid organization_member_id FK "payer snapshot"
+        uuid payout_id FK "scheduled round, not recipient"
+        decimal amount "PKR; 14,2"
+        date paid_on
+        string payment_method
+        string reference "nullable"
+        int recorded_by FK
+        uuid request_id "unique within organization"
+        string request_hash "internal; canonical retry payload"
+        timestamptz created_at
+    }
     COMMITTEE_PAYOUT_PAYMENTS {
         uuid id PK
         uuid organization_id FK
@@ -142,14 +162,20 @@ Preview reads the stored schedule without writing. Activation requires every slo
 
 Services lock the committee inside a transaction for settings, assignments, previews, and activation. Retried activation returns the existing active state without duplicating rows. Active committees reject setup edits, member replacements, and turn replacements.
 
-## Derived obligations and deferred records
+## Contributions, derived obligations, and handovers
 
 There is no stored installments table or ownership-history table. A slot owes the committee contribution for each scheduled round; those expected obligations are calculated when needed. Receiving a payout does not remove later contribution obligations.
+
+`committee_contributions` stores actual receipts for a payer slot and scheduled round, retaining the payer membership snapshot, amount, payment date/method/reference, recording actor, and UTC creation time. Composite foreign keys enforce organization and committee scope. Request IDs are unique per organization; internal request hashes distinguish full-balance requests from explicit amounts and reject changed retries. There are no API update/delete operations.
+
+Omitting the amount records the full remaining balance; an explicit amount supports partial collection. A committee transaction lock prevents concurrent requests from exceeding one slot/round's obligation. Receipt sums derive balances without cached totals. Dues combine slots and scheduled rounds, subtract receipts dated on or before the client-supplied `asOf` date, and report `pending`, `overdue`, or `paid`. Overdue means the due date is earlier than `asOf` and a balance remains. Partial collection retains pending/overdue status until settlement. Backdated receipts affect historical reports; reports do not reconstruct past recording-time snapshots.
 
 Payout handovers are now recorded individually in `committee_payout_payments`. Records retain the recipient membership and recording user, amount, actual handover date, method, reference, and UTC recording time. No API update/delete operation exists. Request IDs are unique per organization, and identical retries return the original record.
 
 Recording locks the committee and payout in that order, sums handover history, checks the cached total and remaining entitlement, then inserts the history and updates `paid_amount`, status, and `paid_at` in one transaction. Database checks keep paid totals between zero and the expected amount and require consistent status/selection/payment timestamps. Partial handovers produce `partially_paid`; reaching the entitlement produces `paid`. `paid_at` is the final recording timestamp, distinct from `paid_on`.
 
-Incoming contributions, cash reconciliation, credits/refunds, payment corrections, proof documents, recipient acknowledgment, draw execution/history, transfers, cancellation, and committee completion remain future work. Manual handover records do not verify bank/wallet settlement or available cash. Completing a round does not automatically close the committee.
+Cash reconciliation, credits/refunds, payment corrections, proof documents, recipient acknowledgment, draw execution/history, transfers, cancellation, and committee completion remain future work. Manual contribution and handover records do not verify bank/wallet settlement or available cash. Completing a round does not automatically close the committee.
+
+Per-committee financial summaries aggregate these existing records without another table. They report full-cycle obligations, dated receipts and handovers, overdue/pending contributions, and the signed net of recorded receipts less handovers. This net excludes organizer funding and is not verified cash held. The client supplies an `asOf` calendar date; only receipts and handovers paid on or before that date count.
 
 See [API.md](./API.md) for endpoint contracts and [PLAN.md](./PLAN.md) for the remaining product scope.

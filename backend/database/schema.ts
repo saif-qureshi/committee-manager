@@ -32,6 +32,39 @@ export class AuthAccessTokenSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class CommitteeContributionSchema extends BaseModel {
+  static $columns = ['amount', 'committeeId', 'committeeMemberId', 'createdAt', 'id', 'organizationId', 'organizationMemberId', 'paidOn', 'paymentMethod', 'payoutId', 'recordedBy', 'reference', 'requestHash', 'requestId'] as const
+  $columns = CommitteeContributionSchema.$columns
+  @column()
+  declare amount: string
+  @column()
+  declare committeeId: string
+  @column()
+  declare committeeMemberId: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: string
+  @column()
+  declare organizationId: string
+  @column()
+  declare organizationMemberId: string
+  @column.date()
+  declare paidOn: DateTime
+  @column()
+  declare paymentMethod: string
+  @column()
+  declare payoutId: string
+  @column()
+  declare recordedBy: number
+  @column()
+  declare reference: string | null
+  @column()
+  declare requestHash: string
+  @column()
+  declare requestId: string
+}
+
 export class CommitteeMemberSchema extends BaseModel {
   static $columns = ['committeeId', 'createdAt', 'id', 'organizationId', 'organizationMemberId', 'slotNumber', 'updatedAt'] as const
   $columns = CommitteeMemberSchema.$columns

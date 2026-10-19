@@ -44,6 +44,22 @@ router
           controllers.CommitteePayoutPayments,
           'store',
         ])
+        router.get('organization/committees/:committeeId/contributions', [
+          controllers.CommitteeContributions,
+          'index',
+        ])
+        router.post('organization/committees/:committeeId/contributions', [
+          controllers.CommitteeContributions,
+          'store',
+        ])
+        router.get('organization/committees/:committeeId/dues', [
+          controllers.CommitteeDues,
+          'index',
+        ])
+        router.get('organization/committees/:committeeId/balance', [
+          controllers.CommitteeBalances,
+          'show',
+        ])
         router.get('organization/committees/:committeeId/schedule', [
           controllers.CommitteeSchedules,
           'show',

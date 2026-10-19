@@ -53,7 +53,7 @@ References: [AdonisJS access tokens](https://docs.adonisjs.com/guides/auth/acces
 
 ### Committees and shares
 
-The implemented setup uses `committees`, `committee_members` (one row per whole-share slot), and `committee_payouts` (scheduled turns and recipients). Contribution obligations are calculated from settings and the schedule; there is no stored installments or ownership-history table. Outgoing full/partial handovers are recorded in `committee_payout_payments`; incoming contribution records, corrections, and cash reconciliation remain in the financial phase.
+The implemented setup uses `committees`, `committee_members` (one row per whole-share slot), and `committee_payouts` (scheduled turns and recipients). Contribution obligations are calculated from settings and the schedule; there is no stored installments or ownership-history table. Outgoing full/partial handovers are recorded in `committee_payout_payments`; incoming receipts use `committee_contributions`. Corrections and cash reconciliation remain pending.
 
 - Each committee has its own members, contribution schedule, payout order or draw history, and financial records.
 - A share is one contribution obligation and one payout entitlement. A person may hold several shares and participate in several committees.
@@ -102,9 +102,11 @@ The implemented setup uses `committees`, `committee_members` (one row per whole-
 
 ### 4. Contributions
 
+Implemented backend: **Mark as Paid** collects one slot/round's full remaining balance by default, with an optional amount for rare partial payments. Receipts retain payer/actor snapshots and retry protection. Calculated dues report pending, overdue, or paid using the client's `asOf` calendar date, without a backend display timezone. History and dues are paginated and organizer-only; mobile screens remain pending.
+
 - Record full, partial, and advance payments, with payment date, method, optional reference, and optional proof.
-- Explicitly allocate amounts to shares and installments. Offer oldest outstanding installment first as the default, with a visible allocation preview.
-- Keep overpayments as identifiable credit or record an explicit refund; do not change the contribution requirement.
+- Allocate each receipt to one slot and scheduled round. Future rounds may be paid early. A later mobile flow may suggest the oldest outstanding round; automatic allocation across rounds is deferred.
+- Currently reject overpayments. Credits/refunds and proof uploads remain future work.
 - Member-uploaded proof stays pending until an organizer verifies it. Pending proof does not count as collected money.
 - Prevent duplicate submissions using request identifiers and database constraints. Flag matching references for review without rejecting legitimate equal amounts.
 - Correct verified records using linked reversals and replacement entries, with a required reason.
@@ -120,6 +122,8 @@ Implemented backend: full/partial handover records, recipient/actor snapshots, r
 - Never mark a payout complete solely because a draw was completed.
 
 ### 6. Dashboard and member statements
+
+Implemented backend: an organizer-only, per-committee balance endpoint reports full-cycle expected/remaining contributions and payouts, received money, overdue/pending balances, and the net of recorded receipts and handovers for a client-supplied calendar date. This net excludes organizer funding and is not a verified cash balance. Dashboard screens, combined organization totals, and member statements remain pending.
 
 - Combined organizer view of active committees, upcoming dues, overdue amounts, upcoming payouts, and cash held.
 - Per-committee view of expected collections, verified collections, arrears, disbursements, and advances.
@@ -195,8 +199,9 @@ Implemented backend: full/partial handover records, recipient/actor snapshots, r
 
 ### Phase 3 — Financial records
 
-- Implement contributions, installment allocations, proof verification, credits/refunds, corrections, payouts, and organizer advances.
-- Add committee balances, organizer dashboard, and audit history.
+- Contributions allocated to slots/rounds, calculated dues, and full/partial payout records are implemented in the backend.
+- Implement proof verification, credits/refunds, corrections, and organizer advances.
+- Per-committee financial summaries are implemented; add funding/reversal reconciliation, the organizer dashboard, and audit history.
 
 **Done when:** A complete sample committee reconciles from first contribution to final payout, including partial payments, a reversal, and a shortfall.
 

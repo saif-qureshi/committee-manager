@@ -4,5 +4,6 @@ export function toMinorUnits(amount: string): bigint {
 }
 
 export function formatAmount(amount: bigint): string {
+  if (amount < 0n) return `-${formatAmount(-amount)}`
   return `${amount / 100n}.${(amount % 100n).toString().padStart(2, '0')}`
 }

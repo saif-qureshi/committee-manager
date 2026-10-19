@@ -1,6 +1,8 @@
 # Committee Manager
 
-Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee drafts, numbered member slots, scheduled payout turns, schedule previews, and activation are implemented using three committee tables. Amounts use decimal PKR strings. Full/partial payout handovers and immutable API payment history are implemented. Incoming contribution tracking, payment corrections, cash reconciliation, and lucky-draw execution remain planned.
+Android-first committee savings app with a planned Urdu/English experience. This repository currently contains the base Expo mobile app and an AdonisJS API with Lucid/PostgreSQL, username/phone authentication, organizer ownership, and invitation-based memberships. Committee drafts, numbered member slots, scheduled payout turns, schedule previews, and activation are implemented using three committee tables. Amounts use decimal PKR strings. Full/partial payout handovers, incoming contribution records, and immutable API payment history are implemented. Contributions default to collecting the full remaining amount; partial amounts are optional. Pending, overdue, and paid dues are calculated for a client-supplied calendar date. Payment corrections, cash reconciliation, and lucky-draw execution remain planned.
+
+The organizer-only financial summary reports expected, received, outstanding, and overdue amounts alongside payout totals for a chosen calendar date. Its recorded net excludes organizer funding and does not represent verified cash held. See [API.md](./API.md) for the balance endpoint.
 
 ## Requirements
 

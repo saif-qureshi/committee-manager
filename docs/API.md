@@ -58,7 +58,7 @@ The recipient registers or logs in, then sends `{ "token": "<invitation-secret>"
 
 Invitations expire after 72 hours. Reissuing to the same identifier revokes previous pending invitations. Accepted, revoked, expired, or already-linked invitations return a conflict. Organization locks and unique membership constraints prevent concurrent requests from creating duplicate links. Organizers can only revoke invitations within their own organization.
 
-Invalid input returns 422; unauthenticated requests return 401. Missing or unauthorized resources return 404. Adonis's invalid-credentials response is 400. Incoming contribution tracking and lucky-draw execution are not implemented yet. Outgoing payout handovers are supported below.
+Invalid input returns 422; unauthenticated requests return 401. Missing or unauthorized resources return 404. Adonis's invalid-credentials response is 400. Contributions and outgoing payout handovers are supported below. Lucky-draw execution remains pending.
 
 ## Current limits
 
@@ -141,7 +141,76 @@ Activation requires an assigned member for every slot, complete fixed-turn recip
 
 Invalid input/assignments return 422, incomplete activation or active edits return 409, and missing/foreign/unauthorized resources return 404. All event timestamps remain UTC; the client handles display in the user's timezone. Calendar dates remain date-only strings.
 
-Incoming contributions, transfers, draw execution, cancellation, and committee completion remain deferred. Outgoing handovers use the payment records below.
+Transfers, draw execution, cancellation, and committee completion remain deferred. Incoming contributions and outgoing handovers use the records below.
+
+## Record a contribution and view dues
+
+The normal organizer action is **Mark as Paid** for one slot and scheduled round. Omit `amount` to collect its full remaining balance; supply an amount only for an occasional partial payment.
+
+| Method | Suffix after `/api/v1/organization/committees` | Controller action | Purpose |
+| --- | --- | --- | --- |
+| POST | `/:committeeId/contributions` | `CommitteeContributionsController.store` | Record money received for one slot and round |
+| GET | `/:committeeId/contributions` | `CommitteeContributionsController.index` | Paginated contribution history |
+| GET | `/:committeeId/dues` | `CommitteeDuesController.index` | Calculated balances and overdue status |
+
+```json
+{
+  "committeeMemberId": "<payer-slot-uuid>",
+  "payoutId": "<scheduled-round-uuid>",
+  "requestId": "<client-generated-uuid>",
+  "paidOn": "2026-10-19",
+  "paymentMethod": "cash",
+  "reference": null
+}
+```
+
+- `committeeMemberId` identifies the contributing slot. `payoutId` identifies the scheduled round, regardless of that round's recipient. Both must belong to this committee. A person holding several slots pays each slot's obligation separately.
+- The committee must be active. Contributions also work for draw rounds before recipient selection and for rounds whose outgoing payout is already complete. Receiving a payout never ends later contribution obligations.
+- An explicit `amount`, such as `"2500.00"`, is a positive PKR string with up to 10 integer digits and two fractional digits. Null, blank, numeric JSON, zero, negative, scientific notation, and excess precision are rejected. Neither explicit nor automatic payments may exceed the slot/round's remaining balance. Already-settled dues return 409 for a new request.
+- `paidOn`, `paymentMethod`, and `reference` follow the payout handover rules below. Recording a future round's contribution is allowed; every receipt is allocated to exactly one slot and round. Overpayment credits and automatic allocation across rounds are not supported.
+- The backend snapshots the payer membership and records the authenticated actor and UTC creation time. These are manual organizer records, with no proof-verification or bank-transfer integration.
+- Generate and retain a `requestId` before sending. Identical retries return the original receipt with 200, even after settlement; first creation returns 201. Reusing the ID within the same organization with different committee, slot, round, amount mode/value, date, method, or reference returns 409. Retrying an automatic payment with an explicit amount is a different request. Equivalent decimal strings and blank/null references are normalized.
+- Committee transaction locks and unique request IDs prevent duplicate collection and overpayment under concurrent requests. Contribution records have no API update/delete routes.
+
+Receipt responses contain `id`, `committeeId`, `committeeMemberId`, `organizationMemberId` (payer snapshot), `payoutId`, `amount`, `paidOn`, `paymentMethod`, `reference`, `recordedBy`, `requestId`, and UTC `createdAt`. Internal request hashes are never exposed. History accepts optional `committeeMemberId`, `payoutId`, and `page`; it returns 25 rows ordered by payment date and recording time descending.
+
+Request dues with `?asOf=2026-10-19&status=overdue`. `asOf` is a required calendar date supplied by the client using the user's local date. Optional filters are `status` (`pending`, `overdue`, or `paid`), `committeeMemberId`, and `page`. Dues require an active committee and return 25 rows ordered by due date and slot number, including future obligations unless filtered.
+
+Each row contains slot/member identity, `payoutId`, `roundNumber`, `dueDate`, `expectedAmount`, `paidAmount`, `remainingAmount`, `status`, `isPartiallyPaid`, and `daysOverdue`. Expected amounts come from committee settings; received totals include only receipts with `paidOn <= asOf`. A fully settled balance is `paid`; an unpaid balance is `overdue` only when the due date is before `asOf`, otherwise `pending`. Partial payments retain pending/overdue status until settled. `daysOverdue` is zero for paid or not-yet-overdue rows.
+
+Historical reports reflect the currently recorded receipts' payment dates, including later-entered backdated receipts; they are not snapshots of what the system knew at a past recording time. No installments table or stored overdue flag is needed.
+
+## Committee financial summary
+
+`GET /api/v1/organization/committees/:committeeId/balance?asOf=2026-10-19` calls `CommitteeBalancesController.show`. It requires an active committee and the owning organizer. The required `asOf` calendar date uses the same validation and date semantics as the dues endpoint.
+
+The response is wrapped in `data`:
+
+```json
+{
+  "committeeId": "<committee-uuid>",
+  "asOf": "2026-10-19",
+  "contributions": {
+    "expectedAmount": "40000.00",
+    "receivedAmount": "15000.00",
+    "remainingAmount": "25000.00",
+    "overdueAmount": "5000.00",
+    "pendingAmount": "20000.00"
+  },
+  "payouts": {
+    "expectedAmount": "40000.00",
+    "paidAmount": "10000.00",
+    "remainingAmount": "30000.00"
+  },
+  "recordedNetAmount": "5000.00"
+}
+```
+
+- Expected and remaining amounts cover the **entire committee cycle**, including future rounds. `overdueAmount` is the unpaid contribution amount for rounds due before `asOf`; `pendingAmount` is the rest, including due-today and future balances.
+- Received contributions and paid payouts include only records with `paidOn <= asOf`. Payout totals come from individual handover records rather than the payout row's current cached total, so historical dates exclude later-dated handovers. Backdated entries affect past reports.
+- `recordedNetAmount` equals received contributions minus paid payouts. It may be negative, including values such as `"-0.01"`, when recorded handovers exceed recorded receipts. It excludes organizer funding, expenses, corrections, and bank/wallet settlement; it is not a verified cash balance or an authorization to disburse money.
+- Totals use all matching records, regardless of history pagination. Calculations use exact integer minor units and return decimal strings. The report locks the committee while reading for a consistent view alongside API payment writes; it creates no records and does not complete the committee.
+- Draft committees return 409, invalid/missing dates return 422, unauthenticated requests return 401, and missing/foreign/unauthorized committees return 404.
 
 ## Record a payout handover
 
@@ -181,4 +250,4 @@ Each payment response contains `id`, `committeeId`, `payoutId`, `organizationMem
 
 Payout lists and schedule previews now expose `paidAmount`, `remainingAmount`, `paidAt`, and the updated status. `paidAt` is the UTC time the final handover was recorded, not the claimed handover calendar date. It stays null for unpaid/partially paid rounds. `selectedAt` remains the original recipient-finalization time.
 
-There are no payment update/delete routes. Corrections, reversals, receipt uploads, recipient acknowledgment, and incoming contribution tracking remain pending. Handovers are manual records; this API does not transfer money or verify bank/wallet settlement. Available cash cannot yet be checked against contribution/funding records, so this increment does not provide cash reconciliation.
+There are no payment update/delete routes. Corrections, reversals, receipt uploads, and recipient acknowledgment remain pending. Handovers are manual records; this API does not transfer money or verify bank/wallet settlement. Cash reconciliation and organizer funding records remain pending, so available cash is not enforced before handover.
